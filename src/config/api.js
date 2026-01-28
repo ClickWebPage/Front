@@ -1,30 +1,31 @@
 // Configuración de la API
-// Configuración automática para desarrollo local y producción
+// Para acceso desde red local, define VUE_APP_API_URL en archivo .env
+// o cambia manualmente la IP aquí
 
-// Detectar automáticamente la URL de la API
+// Detectar automáticamente si se está accediendo desde red local
 function getApiBaseUrl() {
-  // En producción, usar la variable de entorno configurada en Vercel
+  // SIEMPRE usar la URL absoluta de Railway para evitar problemas de URL relativas
+  const railwayUrl = 'https://backend-chpc-production.up.railway.app/api';
+  
+  // Si hay variable de entorno definida, usarla (debe ser una URL completa)
   if (process.env.VUE_APP_API_URL) {
-    return process.env.VUE_APP_API_URL;
+    // Verificar que la URL comience con http para evitar URLs relativas
+    const envUrl = process.env.VUE_APP_API_URL;
+    if (envUrl.startsWith('http://') || envUrl.startsWith('https://')) {
+      return envUrl;
+    }
+    // Si la variable de entorno no es una URL completa, usar Railway como fallback
+    console.warn('VUE_APP_API_URL no es una URL completa, usando Railway como fallback');
+    return railwayUrl;
   }
   
-  // En desarrollo, detectar el entorno
-  const hostname = window.location.hostname;
-  
-  // Si se accede desde localhost/127.0.0.1, usar localhost
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:5000/api';
-  }
-  
-  // Si se accede desde una IP de red local, usar esa misma IP para el backend
-  if (hostname.startsWith('192.168.') || hostname.startsWith('10.') || hostname.startsWith('172.')) {
-    return `http://${hostname}:5000/api`;
-  }
-  
-  // Fallback para producción (Railway)
-  return 'https://backend-chpc-production.up.railway.app/api';
+  // En cualquier otro caso, usar Railway
+  return railwayUrl;
 }
 
 const API_BASE_URL = getApiBaseUrl();
+
+// Log para debugging - esto te ayudará a verificar la URL en la consola
+console.log('🔗 API_BASE_URL configurada:', API_BASE_URL);
 
 export { API_BASE_URL };
