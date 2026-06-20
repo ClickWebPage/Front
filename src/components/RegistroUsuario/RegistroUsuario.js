@@ -1,5 +1,5 @@
-import axios from 'axios';
-import HeaderAnth from "../HeaderAnth/HeaderAnth.vue";import { API_BASE_URL } from '@/config/api';
+import apiClient from '@/services/api';
+import HeaderAnth from "../HeaderAnth/HeaderAnth.vue";
 
 export default {
   name: 'RegistroUsuario',
@@ -28,7 +28,7 @@ export default {
         return;
       }
       try {
-        const response = await axios.post(`${API_BASE_URL}/auth/registro`, {
+        const response = await apiClient.post('/auth/registro', {
           nombre: this.nombre,
           apellido: this.apellido,
           username: this.nombre_usuario,
@@ -75,8 +75,16 @@ export default {
         this.errors.email = 'El correo electrónico debe tener un formato válido.';
       }
       
-      if (this.telefono && (this.telefono.length < 10 || this.telefono.length > 20)) {
-        this.errors.telefono = 'El teléfono debe tener entre 10 y 20 caracteres.';
+      // Validar teléfono (opcional, pero si se llena debe ser válido)
+      if (this.telefono && this.telefono.trim() !== '') {
+        // Validar longitud
+        if (this.telefono.length < 7 || this.telefono.length > 20) {
+          this.errors.telefono = 'El teléfono debe tener entre 7 y 20 caracteres.';
+        }
+        // Validar formato: solo números, espacios, +, -, ( )
+        else if (!/^[0-9+\-\s()]+$/.test(this.telefono)) {
+          this.errors.telefono = 'El teléfono solo puede contener números, espacios y los caracteres: + - ( )';
+        }
       }
       
       if (this.direccion && (this.direccion.length < 10 || this.direccion.length > 200)) {

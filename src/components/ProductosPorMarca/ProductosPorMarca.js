@@ -1,8 +1,9 @@
 import HeaderAnth from "../HeaderAnth/HeaderAnth.vue";
 import FooterAnth from "../FooterAnth/FooterAnth.vue";
 import ContactoAsesor from '../ContactoAsesor/ContactoAsesor.vue';
-import axios from "axios";
-import { API_BASE_URL } from '@/config/api';
+import ProductImageCarousel from '../ProductImageCarousel/ProductImageCarousel.vue';
+import apiClient from '@/services/api';
+import { getImageUrl } from '@/config/api';
 
 export default {
   name: "ProductosPorMarca",
@@ -10,70 +11,83 @@ export default {
     HeaderAnth,
     FooterAnth,
     ContactoAsesor,
+    ProductImageCarousel,
   },
   data() {
     return {
       productos: [],
       nombreMarca: "",
       isAuthenticated: false,
+      userRol: '',
       cargando: true,
       error: null,
-      marcasMap: {
-        1: "ASUS",
-        2: "MSI",
-        3: "AMD",
-        4: "Intel",
-        5: "NVIDIA",
-        6: "Corsair",
-        7: "Kingston",
-        8: "Logitech",
-        9: "Razer",
-        10: "Samsung",
-        11: "Western Digital",
-        12: "Seagate",
-        13: "TP-Link",
-        14: "Cisco",
-        15: "Sony",
-        16: "JBL",
-        17: "Dell",
-        18: "HP",
-        19: "Lenovo",
-        20: "Apple",
-      },
     };
   },
   async created() {
     this.isAuthenticated = !!localStorage.getItem("access_token");
-    const marcaId = this.$route.params.id;
+    this.userRol = localStorage.getItem('user_rol') || '';
+    const marcaParam = this.$route.params.id;
     
-    // Obtener nombre de la marca desde el map
-    this.nombreMarca = this.marcasMap[marcaId] || "Marca";
+    // El parámetro puede ser el nombre de la marca directamente
+    // o un ID numérico del sistema antiguo (mantener compatibilidad)
+    this.nombreMarca = marcaParam || "Marca";
     
     // Cargar productos reales de la base de datos
     await this.cargarProductosPorMarca(this.nombreMarca);
   },
   methods: {
+    formatPrice(price) {
+      const value = Number(price);
+      if (Number.isNaN(value)) return '0.00';
+      return value.toFixed(2);
+    },
     cerrarSesion() {
       localStorage.removeItem("access_token");
       this.isAuthenticated = false;
       this.$router.replace("/login");
     },
-    verDetalle(id) {
-      this.$router.push({ name: "ProductoDetalle", params: { id } });
+    verDetalle(codigo) {
+      this.$router.push({ name: "ProductoDetalle", params: { id: codigo } });
     },
     async cargarProductosPorMarca(marca) {
       try {
         this.cargando = true;
         this.error = null;
         
-        const response = await axios.get(
-          `${API_BASE_URL}/tienda/productos`,
-          {
-            params: { marca: marca }
-          }
-        );
+        console.log('Cargando productos para marca:', marca);
         
-        this.productos = response.data;
+        const response = await apiClient.get('/tienda/productos', {
+          params: { marca: marca }
+        });
+        
+        console.log('Respuesta de la API:', response.data);
+        
+        // La API devuelve { data: [...], total, page, limit, totalPages }
+        const productosArray = response.data.data || response.data;
+        
+        // Mapear productos y construir URLs completas de imágenes
+        this.productos = productosArray.map(producto => {
+          let rutaImagen = '/Productos/placeholder-product.png';
+          if (producto.productImages?.length > 0) {
+            const imagenPrincipal = producto.productImages.find(img => img.es_principal);
+            rutaImagen = imagenPrincipal?.ruta_imagen || producto.productImages[0].ruta_imagen;
+          } else if (producto.imagen_url) {
+            rutaImagen = producto.imagen_url;
+          }
+          
+          return {
+            ...producto,
+            imagen_url: getImageUrl(rutaImagen)
+          };
+        });
+        
+        // Ocultar productos con precio 0.00 y 0.01 a usuarios sin rol privilegiado
+        const rolesConAcceso = ['administrador', 'vendedor', 'tecnico'];
+        if (!rolesConAcceso.includes(this.userRol)) {
+          this.productos = this.productos.filter(p => parseFloat(p.costoTotal) > 0.01);
+        }
+
+        console.log('Productos cargados:', this.productos.length);
         
         if (this.productos.length === 0) {
           this.error = `No se encontraron productos de la marca ${marca}`;
@@ -89,10 +103,36 @@ export default {
     obtenerTextoStock(stock) {
       if (stock === 0) {
         return 'Sin stock';
-      } else if (stock <= 5) {
+      } else if (stock < 3) {
         return `${stock} unidades - Quedan pocas unidades`;
       } else {
         return 'Disponible';
+      }
+    },
+    getProductImages(producto) {
+      // Retornar array de imágenes del producto
+      if (producto.productImages && producto.productImages.length > 0) {
+        // Ordenar para que la imagen principal esté primero
+        const imagesSorted = [...producto.productImages].sort((a, b) => {
+          if (a.es_principal) return -1;
+          if (b.es_principal) return 1;
+          return 0;
+        });
+        return imagesSorted;
+      }
+      
+      // Fallback a imagen_url si no hay productImages
+      if (producto.imagen_url) {
+        return [producto.imagen_url];
+      }
+      
+      return [];
+    },
+    handleImageError(event) {
+      // Prevenir loop infinito: solo cambiar si no es ya el placeholder
+      if (!event.target.dataset.fallback) {
+        event.target.dataset.fallback = 'true';
+        event.target.src = '/placeholder_product.jpg';
       }
     },
   },
@@ -106,10 +146,9 @@ export default {
       handler() {
         // Scroll hacia arriba cuando cambia la marca
         window.scrollTo(0, 0);
-        const marcaId = this.$route.params.id;
-        const marca = this.marcasMap[marcaId] || "Marca";
-        this.nombreMarca = marca;
-        this.cargarProductosPorMarca(marca);
+        const marcaParam = this.$route.params.id;
+        this.nombreMarca = marcaParam || "Marca";
+        this.cargarProductosPorMarca(this.nombreMarca);
       }
     }
   }

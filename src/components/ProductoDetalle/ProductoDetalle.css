@@ -68,6 +68,30 @@
   box-shadow: none;
 }
 
+.barra-regreso {
+  padding-bottom: 4px;
+}
+
+.boton-regresar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  color: #555;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.boton-regresar:hover {
+  background: #FF8000;
+  color: #fff;
+  border-color: #FF8000;
+}
+
 .producto-detalles {
   animation: fadeIn 1s ease;
   display: flex;
@@ -347,6 +371,42 @@
 .detalle-item-compacto span {
   font-size: 14px;
   color: #6c757d;
+}
+
+/* Estilos para la sección de garantía */
+.detalle-item-garantia {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e9ecef;
+  align-items: start;
+}
+
+.detalle-item-garantia strong {
+  font-size: 14px;
+  color: #495057;
+  font-weight: 600;
+}
+
+.garantia-detalle {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.garantia-tiempo {
+  font-size: 16px;
+  font-weight: 600;
+  color: #28a745;
+}
+
+.garantia-mensaje {
+  font-size: 12px;
+  color: #6c757d;
+  margin: 0;
+  font-style: italic;
+  line-height: 1.4;
 }
 
 .descripcion-texto,

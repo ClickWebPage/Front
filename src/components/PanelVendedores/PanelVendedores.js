@@ -1,4 +1,4 @@
-import axios from 'axios';
+import apiClient from '@/services/api';
 
 export default {
   name: 'PanelVendedores',
@@ -49,13 +49,7 @@ export default {
       this.cargando = true;
       this.error = null;
       try {
-        const token = localStorage.getItem('access_token');
-        const response = await axios.get(
-          `${process.env.VUE_APP_API_URL || 'https://backend-chpc-production.up.railway.app/api'}/ordenes/panel/todas`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        const response = await apiClient.get('/ordenes/panel/todas');
         this.pedidos = response.data;
       } catch (err) {
         console.error('Error al cargar pedidos:', err);
@@ -66,21 +60,14 @@ export default {
     },
     async asignarPedido(pedidoId) {
       try {
-        const token = localStorage.getItem('access_token');
-        await axios.post(
-          `${process.env.VUE_APP_API_URL || 'https://backend-chpc-production.up.railway.app/api'}/ordenes/${pedidoId}/asignar`,
-          {
-            vendedor_nombre: this.usuarioNombre,
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        await apiClient.post(`/ordenes/${pedidoId}/asignar`, {
+          vendedor_nombre: this.usuarioNombre,
+        });
         await this.cargarPedidos();
         this.$toast?.success('Pedido asignado exitosamente');
       } catch (err) {
         console.error('Error al asignar pedido:', err);
-        alert(err.response?.data?.message || 'Error al asignar el pedido');
+        this.$store.dispatch('mostrarToast', { mensaje: err.response?.data?.message || 'Error al asignar el pedido', tipo: 'error' });
       }
     },
     async desasignarPedido(pedidoId) {
@@ -90,7 +77,7 @@ export default {
       try {
         const token = localStorage.getItem('access_token');
         await axios.delete(
-          `${process.env.VUE_APP_API_URL || 'https://backend-chpc-production.up.railway.app/api'}/ordenes/${pedidoId}/desasignar`,
+          `${process.env.VUE_APP_API_URL || ''}/ordenes/${pedidoId}/desasignar`,
           {
             headers: { Authorization: `Bearer ${token}` },
           }
@@ -99,14 +86,14 @@ export default {
         this.$toast?.success('Pedido liberado exitosamente');
       } catch (err) {
         console.error('Error al desasignar pedido:', err);
-        alert(err.response?.data?.message || 'Error al liberar el pedido');
+        this.$store.dispatch('mostrarToast', { mensaje: err.response?.data?.message || 'Error al liberar el pedido', tipo: 'error' });
       }
     },
     async cambiarEstado(pedidoId, nuevoEstado) {
       try {
         const token = localStorage.getItem('access_token');
         await axios.patch(
-          `${process.env.VUE_APP_API_URL || 'https://backend-chpc-production.up.railway.app/api'}/ordenes/${pedidoId}/estado-gestion`,
+          `${process.env.VUE_APP_API_URL || ''}/ordenes/${pedidoId}/estado-gestion`,
           {
             estado_gestion: nuevoEstado,
           },
@@ -118,7 +105,7 @@ export default {
         this.$toast?.success('Estado actualizado exitosamente');
       } catch (err) {
         console.error('Error al cambiar estado:', err);
-        alert(err.response?.data?.message || 'Error al cambiar el estado');
+        this.$store.dispatch('mostrarToast', { mensaje: err.response?.data?.message || 'Error al cambiar el estado', tipo: 'error' });
       }
     },
     obtenerTextoEstado(estado) {
@@ -154,7 +141,7 @@ export default {
       try {
         const token = localStorage.getItem('access_token');
         const response = await axios.get(
-          `${process.env.VUE_APP_API_URL || 'https://backend-chpc-production.up.railway.app/api'}/usuarios/perfil`,
+          `${process.env.VUE_APP_API_URL || ''}/usuarios/perfil`,
           {
             headers: { Authorization: `Bearer ${token}` },
           }

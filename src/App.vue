@@ -1,25 +1,22 @@
 <template>
   <div id="app" :class="{ 'dark-mode': isDarkMode }">
-    <div v-if="hasError" class="error-container">
-      <h2>⚠️ Error en la aplicación</h2>
-      <p>{{ errorMessage }}</p>
-      <button @click="reloadApp">🔄 Recargar</button>
-    </div>
-    <template v-else>
-      <router-view /> <!-- Muestra el componente basado en la ruta actual -->
-      <WhatsAppWidget /> <!-- Widget flotante de WhatsApp -->
-    </template>
+    <router-view /> <!-- Muestra el componente basado en la ruta actual -->
+    <WhatsAppWidget /> <!-- Widget flotante de WhatsApp -->
+    <ToastNotification /> <!-- Notificaciones contextuales globales -->
   </div>
 </template>
 
 <script>
 import WhatsAppWidget from './components/WhatsAppWidget/WhatsAppWidget.vue';
+import ToastNotification from './components/ToastNotification/ToastNotification.vue';
 import inactivityService from './services/inactivityService';
+import apiClient from './services/api';
 
 export default {
   name: 'App',
   components: {
-    WhatsAppWidget
+    WhatsAppWidget,
+    ToastNotification,
   },
   data() {
     return {
@@ -27,34 +24,25 @@ export default {
       inactivityTimer: null,
       inactivityTimeout: 3600000, // 1 hora en milisegundos (60 * 60 * 1000)
       activityEvents: ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'],
-      hasError: false,
-      errorMessage: ''
     };
   },
   created() {
-    console.log('🎯 App.vue creado, iniciando configuración...');
-    
-    try {
-      // Cargar preferencia de tema desde localStorage
-      const savedTheme = localStorage.getItem('theme');
-      this.isDarkMode = savedTheme === 'dark';
-      this.applyTheme();
+    // Cargar preferencia de tema desde localStorage
+    const savedTheme = localStorage.getItem('theme');
+    this.isDarkMode = savedTheme === 'dark';
+    this.applyTheme();
 
-      // Escuchar cambios de tema
-      window.addEventListener('theme-changed', this.handleThemeChange);
+    // Cargar colores de énfasis personalizados
+    this.loadSiteColors();
 
-      // Registrar función de reseteo en el servicio global
-      inactivityService.registerResetFunction(this.resetInactivityTimer);
+    // Escuchar cambios de tema
+    window.addEventListener('theme-changed', this.handleThemeChange);
 
-      // Iniciar monitoreo de inactividad
-      this.initInactivityMonitor();
-      
-      console.log('✅ App.vue configurado correctamente');
-    } catch (error) {
-      console.error('❌ Error en App.vue created:', error);
-      this.hasError = true;
-      this.errorMessage = 'Error al inicializar la aplicación: ' + error.message;
-    }
+    // Registrar función de reseteo en el servicio global
+    inactivityService.registerResetFunction(this.resetInactivityTimer);
+
+    // Iniciar monitoreo de inactividad
+    this.initInactivityMonitor();
   },
   beforeUnmount() {
     window.removeEventListener('theme-changed', this.handleThemeChange);
@@ -66,9 +54,6 @@ export default {
     inactivityService.cleanup();
   },
   methods: {
-    reloadApp() {
-      window.location.reload();
-    },
     handleThemeChange(event) {
       this.isDarkMode = event.detail.isDark;
       this.applyTheme();
@@ -79,6 +64,59 @@ export default {
       } else {
         document.body.classList.remove('dark-mode');
       }
+    },
+
+    // Cargar colores de énfasis desde el backend o localStorage
+    async loadSiteColors() {
+      try {
+        // Primero intentar cargar desde localStorage para una respuesta inmediata
+        const cachedColors = localStorage.getItem('site_colors');
+        if (cachedColors) {
+          this.applySiteColors(JSON.parse(cachedColors));
+        }
+
+        // Luego obtener los colores más recientes del servidor
+        const response = await apiClient.get('/configuracion/colores/tema');
+        if (response.data && response.data.valor) {
+          const colores = response.data.valor;
+          this.applySiteColors(colores);
+          // Actualizar cache
+          localStorage.setItem('site_colors', JSON.stringify(colores));
+        }
+      } catch (error) {
+        console.log('Usando colores por defecto');
+        // Los colores por defecto ya están en CSS :root
+      }
+    },
+
+    // Aplicar colores a las variables CSS
+    applySiteColors(colores) {
+      const root = document.documentElement;
+      if (colores.primary) {
+        root.style.setProperty('--color-primary', colores.primary);
+        // Derivar versiones alpha del color primario
+        const rgb = this.hexToRgb(colores.primary);
+        if (rgb) {
+          root.style.setProperty('--color-primary-alpha-10', `rgba(${rgb}, 0.1)`);
+          root.style.setProperty('--color-primary-alpha-20', `rgba(${rgb}, 0.2)`);
+          root.style.setProperty('--color-primary-alpha-30', `rgba(${rgb}, 0.3)`);
+        }
+      }
+      if (colores.primaryDark) root.style.setProperty('--color-primary-dark', colores.primaryDark);
+      if (colores.primaryLight) root.style.setProperty('--color-primary-light', colores.primaryLight);
+      if (colores.success) root.style.setProperty('--color-success', colores.success);
+      if (colores.error) root.style.setProperty('--color-error', colores.error);
+    },
+
+    // Convierte un color hex (#rrggbb) a "r, g, b" para usar en rgba()
+    hexToRgb(hex) {
+      const clean = hex.replace('#', '');
+      if (clean.length !== 6) return null;
+      const r = parseInt(clean.substring(0, 2), 16);
+      const g = parseInt(clean.substring(2, 4), 16);
+      const b = parseInt(clean.substring(4, 6), 16);
+      if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+      return `${r}, ${g}, ${b}`;
     },
     
     // Sistema de monitoreo de inactividad
@@ -154,8 +192,8 @@ export default {
       if (this.$route.path !== '/login') {
         this.$router.push('/login');
       }
-    }
-  }
+    },
+  },
 };
 </script>
 
@@ -165,51 +203,17 @@ export default {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-.error-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: 2rem;
-  background-color: #f8f9fa;
-  text-align: center;
-}
-
-.error-container h2 {
-  color: #dc3545;
-  margin-bottom: 1rem;
-  font-size: 2rem;
-}
-
-.error-container p {
-  color: #6c757d;
-  margin-bottom: 2rem;
-  max-width: 600px;
-  line-height: 1.6;
-}
-
-.error-container button {
-  background-color: #007bff;
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 0.375rem;
-  cursor: pointer;
-  font-size: 1rem;
-  transition: background-color 0.2s;
-}
-
-.error-container button:hover {
-  background-color: #0056b3;
-}
-
 body {
   background-color: #f8f9fa;
   color: #2c3e50;
 }
 
 body.dark-mode {
+  background-color: #1a1a1a;
+  color: #ecf0f1;
+}
+
+#app.dark-mode {
   background-color: #1a1a1a;
   color: #ecf0f1;
 }

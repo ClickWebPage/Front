@@ -1,8 +1,9 @@
 import HeaderAnth from '../HeaderAnth/HeaderAnth.vue';
 import FooterAnth from '../FooterAnth/FooterAnth.vue';
 import ContactoAsesor from '../ContactoAsesor/ContactoAsesor.vue';
-import axios from 'axios';
-import { API_BASE_URL } from '@/config/api';
+import apiClient from '@/services/api';
+import authService from '@/services/auth';
+import { getImageUrl } from '@/config/api';
 
 export default {
   name: 'TodosLosProductos',
@@ -18,12 +19,13 @@ export default {
       cargando: true,
       searchQuery: '',
       isAuthenticated: false,
+      userRol: '',
       
       // Filtros
       filtros: {
         marcas: [],
-        colores: [],
-        subcategorias: [],
+        medidas: [],
+        categorias: [],
         precioMin: null,
         precioMax: null,
         soloDisponibles: false
@@ -31,10 +33,15 @@ export default {
       
       // Opciones disponibles
       marcasDisponibles: [],
-      coloresDisponibles: [],
-      subcategoriasDisponibles: [],
+      medidasDisponibles: [],
+      categoriasDisponibles: [],
       precioMinimo: 0,
       precioMaximo: 0,
+
+      // Búsqueda dentro de filtros
+      busquedaMarca: '',
+      busquedaMedida: '',
+      busquedaCategoria: '',
       
       // Ordenamiento
       ordenamiento: 'relevancia',
@@ -45,6 +52,7 @@ export default {
       // Paginación
       paginaActual: 1,
       productosPorPagina: 15,
+      paginaInput: null,
       
       // Iconos de categorías (igual que HomePage)
       iconosCategorias: {
@@ -67,23 +75,171 @@ export default {
     },
     totalPaginas() {
       return Math.ceil(this.productosFiltrados.length / this.productosPorPagina);
+    },
+    marcasFiltradas() {
+      if (!this.busquedaMarca.trim()) return this.marcasDisponibles;
+      const q = this.busquedaMarca.toLowerCase();
+      return this.marcasDisponibles.filter(m => m.toLowerCase().includes(q));
+    },
+    medidasFiltradas() {
+      if (!this.busquedaMedida.trim()) return this.medidasDisponibles;
+      const q = this.busquedaMedida.toLowerCase();
+      return this.medidasDisponibles.filter(m => m.toLowerCase().includes(q));
+    },
+    categoriasFiltradas() {
+      if (!this.busquedaCategoria.trim()) return this.categoriasDisponibles;
+      const q = this.busquedaCategoria.toLowerCase();
+      return this.categoriasDisponibles.filter(c => c.toLowerCase().includes(q));
+    },
+    paginasVisibles() {
+      const total = this.totalPaginas;
+      const actual = this.paginaActual;
+      const paginas = [];
+
+      // Si hay 7 o menos páginas, mostrar todas
+      if (total <= 7) {
+        for (let i = 1; i <= total; i++) {
+          paginas.push(i);
+        }
+        return paginas;
+      }
+
+      // Siempre mostrar primera página
+      paginas.push(1);
+
+      // Calcular rango alrededor de la página actual
+      let inicio = Math.max(2, actual - 1);
+      let fin = Math.min(total - 1, actual + 1);
+
+      // Ajustar si estamos cerca del inicio
+      if (actual <= 3) {
+        fin = 5;
+      }
+
+      // Ajustar si estamos cerca del final
+      if (actual >= total - 2) {
+        inicio = total - 4;
+      }
+
+      // Agregar puntos suspensivos al inicio si es necesario
+      if (inicio > 2) {
+        paginas.push('...');
+      }
+
+      // Agregar páginas del rango
+      for (let i = inicio; i <= fin; i++) {
+        if (i > 1 && i < total) {
+          paginas.push(i);
+        }
+      }
+
+      // Agregar puntos suspensivos al final si es necesario
+      if (fin < total - 1) {
+        paginas.push('...');
+      }
+
+      // Siempre mostrar última página
+      if (total > 1) {
+        paginas.push(total);
+      }
+
+      return paginas;
     }
   },
   async mounted() {
     this.verificarAutenticacion();
     await this.cargarProductos();
+
+    // Restaurar filtros guardados (al retroceder con el navegador)
+    this.restaurarFiltros();
+    
+    // Leer búsqueda desde URL si existe (tiene prioridad sobre sessionStorage)
+    const searchFromUrl = this.$route.query.search;
+    if (searchFromUrl) {
+      this.searchQuery = searchFromUrl;
+      this.aplicarFiltrosConBusqueda();
+    }
+  },
+  watch: {
+    // Observar cambios en la URL para actualizar la búsqueda
+    '$route.query.search': {
+      handler(newSearch) {
+        if (newSearch !== undefined) {
+          this.searchQuery = newSearch || '';
+          this.aplicarFiltrosConBusqueda();
+        }
+      },
+      immediate: false
+    }
   },
   methods: {
     verificarAutenticacion() {
       const token = localStorage.getItem('access_token');
       this.isAuthenticated = !!token;
+      this.userRol = localStorage.getItem('user_rol') || '';
+    },
+
+    puedeVerPreciosCero() {
+      return ['administrador', 'vendedor', 'tecnico'].includes(this.userRol);
+    },
+
+    guardarFiltros() {
+      sessionStorage.setItem('productos_filtros', JSON.stringify({
+        filtros: this.filtros,
+        ordenamiento: this.ordenamiento,
+        paginaActual: this.paginaActual,
+        searchQuery: this.searchQuery,
+      }));
+    },
+
+    restaurarFiltros() {
+      const guardado = sessionStorage.getItem('productos_filtros');
+      if (!guardado) return;
+      try {
+        const estado = JSON.parse(guardado);
+        this.filtros = { ...this.filtros, ...estado.filtros };
+        this.ordenamiento = estado.ordenamiento || 'relevancia';
+        this.paginaActual = estado.paginaActual || 1;
+        if (!this.$route.query.search && estado.searchQuery) {
+          this.searchQuery = estado.searchQuery;
+        }
+        this.aplicarFiltrosConBusqueda();
+      } catch (_) {
+        sessionStorage.removeItem('productos_filtros');
+      }
     },
     
     async cargarProductos() {
       try {
         this.cargando = true;
-        const response = await axios.get(`${API_BASE_URL}/tienda/productos`);
-        this.productos = response.data;
+        const response = await apiClient.get('/tienda/productos');
+        // La API devuelve { data: [...], total, page, limit, totalPages }
+        const productosArray = response.data.data || response.data;
+        
+        // Procesar imágenes de productos igual que en HomePage
+        this.productos = productosArray.map((producto) => {
+          // Obtener la ruta de la imagen (principal o primera disponible)
+          let rutaImagen = '/Productos/placeholder-product.png';
+          if (producto.productImages?.length > 0) {
+            const imagenPrincipal = producto.productImages.find(img => img.es_principal);
+            rutaImagen = imagenPrincipal?.ruta_imagen || producto.productImages[0].ruta_imagen;
+          } else if (producto.media?.length > 0) {
+            rutaImagen = producto.media[0].url;
+          } else if (producto.imagen_url) {
+            rutaImagen = producto.imagen_url;
+          }
+          
+          return {
+            ...producto,
+            imagen_url: getImageUrl(rutaImagen)
+          };
+        });
+        
+        // Ocultar productos con precio 0.00 y 0.01 a usuarios sin rol privilegiado
+        if (!this.puedeVerPreciosCero()) {
+          this.productos = this.productos.filter(p => parseFloat(p.costoTotal) > 0.01);
+        }
+
         this.productosFiltrados = [...this.productos];
         
         this.extraerOpcionesFiltros();
@@ -104,25 +260,29 @@ export default {
       });
       this.marcasDisponibles = Array.from(marcasSet).sort();
       
-      // Extraer colores únicos
-      const coloresSet = new Set();
+      // Extraer medidas únicas
+      const medidasSet = new Set();
       this.productos.forEach(p => {
-        if (p.color) coloresSet.add(p.color);
+        if (p.medida) medidasSet.add(p.medida);
       });
-      this.coloresDisponibles = Array.from(coloresSet).sort();
+      this.medidasDisponibles = Array.from(medidasSet).sort();
       
-      // Extraer subcategorías únicas
-      const subcategoriasSet = new Set();
+      // Extraer categorías únicas
+      const categoriasSet = new Set();
       this.productos.forEach(p => {
-        if (p.subcategoria) subcategoriasSet.add(p.subcategoria);
+        if (p.categoria) categoriasSet.add(p.categoria);
       });
-      this.subcategoriasDisponibles = Array.from(subcategoriasSet).sort();
+      this.categoriasDisponibles = Array.from(categoriasSet).filter(c => c !== 'Otros').sort();
+      // Agregar 'Otros' al final si existe
+      if (this.productos.some(p => p.categoria === 'Otros')) {
+        this.categoriasDisponibles.push('Otros');
+      }
     },
     
     calcularRangoPrecio() {
       if (this.productos.length === 0) return;
       
-      const precios = this.productos.map(p => parseFloat(p.precio));
+      const precios = this.productos.map(p => parseFloat(p.costoTotal) || 0);
       this.precioMinimo = Math.floor(Math.min(...precios));
       this.precioMaximo = Math.ceil(Math.max(...precios));
       
@@ -131,67 +291,26 @@ export default {
     },
     
     aplicarFiltros() {
-      let resultado = [...this.productos];
-      
-      // Filtro por marca
-      if (this.filtros.marcas.length > 0) {
-        resultado = resultado.filter(p => 
-          this.filtros.marcas.includes(p.marca)
-        );
-      }
-      
-      // Filtro por color
-      if (this.filtros.colores.length > 0) {
-        resultado = resultado.filter(p => 
-          this.filtros.colores.includes(p.color)
-        );
-      }
-      
-      // Filtro por subcategoría
-      if (this.filtros.subcategorias.length > 0) {
-        resultado = resultado.filter(p => 
-          this.filtros.subcategorias.includes(p.subcategoria)
-        );
-      }
-      
-      // Filtro por precio
-      if (this.filtros.precioMin !== null) {
-        resultado = resultado.filter(p => 
-          parseFloat(p.precio) >= this.filtros.precioMin
-        );
-      }
-      if (this.filtros.precioMax !== null) {
-        resultado = resultado.filter(p => 
-          parseFloat(p.precio) <= this.filtros.precioMax
-        );
-      }
-      
-      // Filtro por stock
-      if (this.filtros.soloDisponibles) {
-        resultado = resultado.filter(p => p.stock > 0);
-      }
-      
-      this.productosFiltrados = resultado;
-      this.paginaActual = 1; // Resetear a la primera página
-      this.aplicarOrdenamiento();
+      // Usar la función unificada que incluye búsqueda
+      this.aplicarFiltrosConBusqueda();
     },
     
     aplicarOrdenamiento() {
       switch (this.ordenamiento) {
         case 'precio-asc':
-          this.productosFiltrados.sort((a, b) => parseFloat(a.precio) - parseFloat(b.precio));
+          this.productosFiltrados.sort((a, b) => parseFloat(a.costoTotal) - parseFloat(b.costoTotal));
           break;
         case 'precio-desc':
-          this.productosFiltrados.sort((a, b) => parseFloat(b.precio) - parseFloat(a.precio));
+          this.productosFiltrados.sort((a, b) => parseFloat(b.costoTotal) - parseFloat(a.costoTotal));
           break;
         case 'nombre-asc':
           this.productosFiltrados.sort((a, b) => 
-            a.nombre_producto.localeCompare(b.nombre_producto)
+            a.producto.localeCompare(b.producto)
           );
           break;
         case 'nombre-desc':
           this.productosFiltrados.sort((a, b) => 
-            b.nombre_producto.localeCompare(a.nombre_producto)
+            b.producto.localeCompare(a.producto)
           );
           break;
         default:
@@ -203,13 +322,14 @@ export default {
     limpiarFiltros() {
       this.filtros = {
         marcas: [],
-        colores: [],
-        subcategorias: [],
+        medidas: [],
+        categorias: [],
         precioMin: this.precioMinimo,
         precioMax: this.precioMaximo,
         soloDisponibles: false
       };
       this.ordenamiento = 'relevancia';
+      sessionStorage.removeItem('productos_filtros');
       this.aplicarFiltros();
     },
     
@@ -219,42 +339,133 @@ export default {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     },
+
+    irAPaginaInput() {
+      if (this.paginaInput && this.paginaInput >= 1 && this.paginaInput <= this.totalPaginas) {
+        this.cambiarPagina(this.paginaInput);
+        this.paginaInput = null; // Limpiar el input después de navegar
+      } else if (this.paginaInput) {
+        this.$store.dispatch('mostrarToast', { mensaje: `Por favor ingresa un número entre 1 y ${this.totalPaginas}`, tipo: 'warning' });
+      }
+    },
     
-    verDetalle(id) {
-      this.$router.push(`/producto/${id}`);
+    verDetalle(codigo) {
+      this.guardarFiltros();
+      this.$router.push(`/producto/${codigo}`);
     },
     
     agregarAlCarrito(producto) {
+      // Verificar si el usuario está autenticado
+      if (!localStorage.getItem('access_token')) {
+        this.$router.push('/login');
+        return;
+      }
+
       const carrito = JSON.parse(localStorage.getItem('carrito')) || [];
-      const existente = carrito.find(item => item.id === producto.id);
+      const existente = carrito.find(item => item.codigo === producto.codigo);
       
       if (existente) {
         existente.cantidad += 1;
       } else {
         carrito.push({
-          id: producto.id,
-          nombre_producto: producto.nombre_producto,
-          precio: producto.precio,
+          codigo: producto.codigo,
+          producto: producto.producto,
+          costoTotal: producto.costoTotal,
           imagen_url: producto.imagen_url,
           cantidad: 1,
-          stock: producto.stock
+          existenciaTotal: producto.existenciaTotal,
+          marca: producto.marca,
+          medida: producto.medida
         });
       }
       
       localStorage.setItem('carrito', JSON.stringify(carrito));
-      alert('Producto agregado al carrito');
+      this.$store.dispatch('mostrarToast', { mensaje: 'Producto agregado al carrito', tipo: 'success' });
     },
     
     buscarProductos(query) {
       this.searchQuery = query;
-      // Implementar búsqueda si es necesario
+      this.aplicarFiltrosConBusqueda();
+    },
+    
+    aplicarFiltrosConBusqueda() {
+      let resultado = [...this.productos];
+      const searchTerm = this.searchQuery.toLowerCase().trim();
+      
+      // Filtro por búsqueda de texto
+      if (searchTerm) {
+        resultado = resultado.filter(p => {
+          const nombre = (p.producto || '').toLowerCase();
+          const marca = (p.marca || '').toLowerCase();
+          const medida = (p.medida || '').toLowerCase();
+          const almacen = (p.almacen || '').toLowerCase();
+          const codigo = String(p.codigo || '').toLowerCase();
+          
+          return nombre.includes(searchTerm) ||
+                 marca.includes(searchTerm) ||
+                 medida.includes(searchTerm) ||
+                 almacen.includes(searchTerm) ||
+                 codigo.includes(searchTerm);
+        });
+      }
+      
+      // Filtro por marca
+      if (this.filtros.marcas.length > 0) {
+        resultado = resultado.filter(p => 
+          this.filtros.marcas.includes(p.marca)
+        );
+      }
+      
+      // Filtro por categoría
+      if (this.filtros.categorias.length > 0) {
+        resultado = resultado.filter(p => 
+          this.filtros.categorias.includes(p.categoria)
+        );
+      }
+      
+      // Filtro por medida
+      if (this.filtros.medidas.length > 0) {
+        resultado = resultado.filter(p => 
+          this.filtros.medidas.includes(p.medida)
+        );
+      }
+      
+      // Filtro por precio
+      if (this.filtros.precioMin !== null) {
+        resultado = resultado.filter(p => 
+          parseFloat(p.costoTotal) >= this.filtros.precioMin
+        );
+      }
+      if (this.filtros.precioMax !== null) {
+        resultado = resultado.filter(p => 
+          parseFloat(p.costoTotal) <= this.filtros.precioMax
+        );
+      }
+      
+      // Filtro por stock
+      if (this.filtros.soloDisponibles) {
+        resultado = resultado.filter(p => parseInt(p.existenciaTotal) > 0);
+      }
+      
+      this.productosFiltrados = resultado;
+      this.paginaActual = 1;
+      this.aplicarOrdenamiento();
+      this.guardarFiltros();
+    },
+    
+    limpiarBusqueda() {
+      this.searchQuery = '';
+      // Actualizar URL removiendo el parámetro search
+      this.$router.replace({ path: '/productos' });
+      this.aplicarFiltrosConBusqueda();
     },
     
     cerrarSesion() {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      this.isAuthenticated = false;
-      this.$router.push('/login');
+      // Usar el servicio de autenticación centralizado
+      authService.logoutAndRedirect(this.$router);
+      
+      // Limpiar el estado de Vuex
+      this.$store.dispatch('limpiarTodo');
     },
     
     formatearPrecio(precio) {
@@ -269,7 +480,11 @@ export default {
     },
     
     handleImageError(event) {
-      event.target.src = '/placeholder.jpg';
+      // Prevenir loop infinito: solo cambiar si no es ya el placeholder
+      if (!event.target.dataset.fallback) {
+        event.target.dataset.fallback = 'true';
+        event.target.src = '/placeholder_product.jpg';
+      }
     },
     
     obtenerIconoCategoria(nombreCategoria) {
@@ -286,7 +501,7 @@ export default {
     obtenerTextoStock(stock) {
       if (stock === 0) {
         return 'Sin stock';
-      } else if (stock <= 5) {
+      } else if (stock < 3) {
         return `${stock} unidades - Quedan pocas unidades`;
       } else {
         return 'Disponible';

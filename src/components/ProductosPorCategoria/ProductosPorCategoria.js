@@ -1,8 +1,9 @@
 import HeaderAnth from "../HeaderAnth/HeaderAnth.vue";
 import FooterAnth from "../FooterAnth/FooterAnth.vue";
 import ContactoAsesor from '../ContactoAsesor/ContactoAsesor.vue';
-import axios from "axios";
-import { API_BASE_URL } from '@/config/api';
+import ProductImageCarousel from '../ProductImageCarousel/ProductImageCarousel.vue';
+import apiClient from '@/services/api';
+import { getImageUrl } from '@/config/api';
 
 export default {
   name: "ProductosPorCategoria",
@@ -10,32 +11,16 @@ export default {
     HeaderAnth,
     FooterAnth,
     ContactoAsesor,
+    ProductImageCarousel,
   },
   data() {
     return {
       searchQuery: "",
       isAuthenticated: false,
+      userRol: '',
       nombreCategoria: "",
       marcaSeleccionada: null,
       productos: [],
-      categoriasInfo: {
-        laptops: "Laptops",
-        desktops: "Computadoras de Escritorio",
-        monitores: "Monitores",
-        teclados: "Teclados",
-        mouses: "Mouses",
-        impresoras: "Impresoras",
-        camaras: "Cámaras de Seguridad",
-        tablets: "Tablets",
-        accesorios: "Accesorios",
-        redes: "Redes",
-        componentes: "Componentes",
-        perifericos: "Periféricos",
-        almacenamiento: "Almacenamiento",
-        audio: "Audio",
-        // Soporte para categorías con guiones
-        'periféricos': "Periféricos",
-      },
       // Control de secciones de filtros abiertas/cerradas
       sectionsOpen: {
         category: true,
@@ -47,11 +32,19 @@ export default {
     };
   },
   computed: {
+    puedeVerPreciosCero() {
+      return ['administrador', 'vendedor', 'tecnico'].includes(this.userRol);
+    },
     productosFiltrados() {
+      const rolesConAcceso = ['administrador', 'vendedor', 'tecnico'];
+      const base = rolesConAcceso.includes(this.userRol)
+        ? this.productos
+        : this.productos.filter(p => parseFloat(p.costoTotal) > 0.01);
+
       if (this.marcaSeleccionada === null) {
-        return this.productos;
+        return base;
       }
-      return this.productos.filter(
+      return base.filter(
         (p) => p.marca?.toLowerCase() === this.marcaSeleccionada.toLowerCase()
       );
     },
@@ -63,12 +56,18 @@ export default {
   },
   created() {
     this.isAuthenticated = !!localStorage.getItem("access_token");
-    const categoriaSlug = this.$route.params.categoria;
-    this.nombreCategoria =
-      this.categoriasInfo[categoriaSlug] || "Categoría Desconocida";
-    this.cargarProductos(categoriaSlug);
+    this.userRol = localStorage.getItem('user_rol') || '';
+    // El parámetro categoria ahora es el nombre exacto de la categoría (no un slug)
+    const categoriaParam = this.$route.params.categoria;
+    this.nombreCategoria = categoriaParam;
+    this.cargarProductos(categoriaParam);
   },
   methods: {
+    formatPrice(price) {
+      const value = Number(price);
+      if (Number.isNaN(value)) return '0.00';
+      return value.toFixed(2);
+    },
     cerrarSesion() {
       localStorage.removeItem("access_token");
       this.isAuthenticated = false;
@@ -78,43 +77,45 @@ export default {
       this.searchQuery = query;
       // Implementar lógica de búsqueda
     },
-    async cargarProductos(categoria) {
+    async cargarProductos(nombreCategoria) {
       try {
-        console.log('🔍 [DEBUG] Categoría slug recibida:', categoria);
-        console.log('🔍 [DEBUG] categoriasInfo disponibles:', Object.keys(this.categoriasInfo));
+        console.log('🔍 Cargando productos para categoría:', nombreCategoria);
         
-        // Obtener el nombre de categoría formateado del mapping
-        const categoriaFormateada = this.categoriasInfo[categoria] || 
-          categoria.charAt(0).toUpperCase() + categoria.slice(1);
+        // Usar el nuevo endpoint con filtro de categoría
+        const url = `/tienda/productos?categoria=${encodeURIComponent(nombreCategoria)}`;
+        console.log('🌐 URL de petición:', url);
         
-        console.log('📦 [DEBUG] Categoría formateada para buscar:', categoriaFormateada);
+        const response = await apiClient.get(url);
         
-        const url = `${API_BASE_URL}/tienda/productos?categoria=${categoriaFormateada}`;
-        console.log('🌐 [DEBUG] URL de petición:', url);
+        // La API devuelve { data: [...], total, page, limit, totalPages }
+        const productosArray = response.data.data || response.data;
         
-        const response = await axios.get(url);
-        
-        console.log('✅ [DEBUG] Respuesta del servidor:', {
+        console.log('✅ Respuesta del servidor:', {
           status: response.status,
-          totalProductos: response.data.length,
-          primerProducto: response.data[0]
+          totalProductos: productosArray.length,
+          primerProducto: productosArray[0]
         });
         
-        this.productos = response.data.map(producto => ({
-          ...producto,
-          imagen_url: producto.productImages?.length > 0
-            ? producto.productImages.find(img => img.es_principal)?.ruta_imagen || producto.productImages[0].ruta_imagen
-            : producto.imagen_url || "/Productos/placeholder-product.png"
-        }));
+        this.productos = productosArray.map(producto => {
+          // Obtener la ruta de la imagen (principal o primera disponible)
+          let rutaImagen = '/Productos/placeholder-product.png';
+          if (producto.productImages?.length > 0) {
+            const imagenPrincipal = producto.productImages.find(img => img.es_principal);
+            rutaImagen = imagenPrincipal?.ruta_imagen || producto.productImages[0].ruta_imagen;
+          } else if (producto.imagen_url) {
+            rutaImagen = producto.imagen_url;
+          }
+          
+          return {
+            ...producto,
+            imagen_url: getImageUrl(rutaImagen)
+          };
+        });
         
-        console.log(`✅ Productos cargados para ${categoriaFormateada}:`, this.productos.length);
+        console.log(`✅ Productos cargados para ${nombreCategoria}:`, this.productos.length);
         
         if (this.productos.length === 0) {
           console.warn('⚠️ No se encontraron productos para esta categoría');
-          // Intentar cargar TODOS los productos para ver qué categorías existen
-          const todosResponse = await axios.get(`${API_BASE_URL}/tienda/productos`);
-          const categoriasExistentes = [...new Set(todosResponse.data.map(p => p.categoria))];
-          console.log('📋 Categorías disponibles en la BD:', categoriasExistentes);
         }
       } catch (error) {
         console.error("❌ Error al cargar productos:", error);
@@ -128,13 +129,32 @@ export default {
     toggleSection(section) {
       this.sectionsOpen[section] = !this.sectionsOpen[section];
     },
-    verDetalle(id) {
-      this.$router.push({ name: "ProductoDetalle", params: { id } });
+    getProductImages(producto) {
+      // Retornar array de imágenes del producto
+      if (producto.productImages && producto.productImages.length > 0) {
+        // Ordenar para que la imagen principal esté primero
+        const imagesSorted = [...producto.productImages].sort((a, b) => {
+          if (a.es_principal) return -1;
+          if (b.es_principal) return 1;
+          return 0;
+        });
+        return imagesSorted;
+      }
+      
+      // Fallback a imagen_url si no hay productImages
+      if (producto.imagen_url) {
+        return [producto.imagen_url];
+      }
+      
+      return [];
+    },
+    verDetalle(codigo) {
+      this.$router.push({ name: "ProductoDetalle", params: { id: codigo } });
     },
     obtenerTextoStock(stock) {
       if (stock === 0) {
         return 'Sin stock';
-      } else if (stock <= 5) {
+      } else if (stock < 3) {
         return `${stock} unidades - Quedan pocas unidades`;
       } else {
         return 'Disponible';

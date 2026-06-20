@@ -8,35 +8,46 @@
       <div class="spacer"></div>
       <!-- Campana de notificaciones -->
       <NotificationsBell v-if="isAuthenticated" />
-    </div>
-
-    <div class="tabs">
-      <button
-        v-for="tab in visibleTabs"
-        :key="tab.id"
-        :class="['tab-button', { active: activeTab === tab.id }]"
-        @click="activeTab = tab.id"
-      >
-        {{ tab.label }}
-      </button>
-      <!-- Agregar tab de notificaciones -->
-      <button
-        :class="['tab-button', { active: activeTab === 'notificaciones' }]"
-        @click="activeTab = 'notificaciones'"
-      >
-        🔔 Notificaciones
+      <button class="btn-logout" @click="logout" title="Cerrar sesión">
+        <span class="logout-icon"><FontAwesomeIcon :icon="['fas', 'right-from-bracket']" /></span>
+        <span class="logout-label">Cerrar sesión</span>
       </button>
     </div>
 
-    <div class="tab-content">
+    <div class="panel-body">
+      <!-- Sidebar de navegación compacto -->
+      <nav class="sidebar-nav">
+        <button
+          v-for="tab in visibleTabs"
+          :key="tab.id"
+          :class="['nav-item', { active: activeTab === tab.id }]"
+          @click="activeTab = tab.id"
+          :title="tab.label"
+        >
+          <span class="nav-icon"><FontAwesomeIcon :icon="tab.icon" /></span>
+          <span class="nav-label">{{ tab.label }}</span>
+        </button>
+      </nav>
+
+      <div class="tab-content">
       <!-- Tab de Notificaciones -->
       <div v-if="activeTab === 'notificaciones'" class="tab-panel">
         <NotificationsPanel />
       </div>
-      
+
+      <!-- Tab de Actividad (Audit Log) -->
+      <div v-if="activeTab === 'actividad'" class="tab-panel">
+        <AdminLogs />
+      </div>
+
       <!-- Tab de Productos -->
       <div v-if="activeTab === 'productos'" class="tab-panel">
         <AdminProductos />
+      </div>
+
+      <!-- Tab de Garantías -->
+      <div v-if="activeTab === 'garantias'" class="tab-panel">
+        <AdminGarantias />
       </div>
       
       <!-- Tab de Promociones -->
@@ -56,12 +67,46 @@
           <form @submit.prevent="submitPromotion" class="promotion-form">
             <div class="form-group">
               <label>Producto:</label>
-              <select v-model="promotionForm.producto_id" required>
-                <option value="">Seleccione un producto</option>
-                <option v-for="producto in productos" :key="producto.id" :value="producto.id">
-                  {{ producto.nombre_producto }} - ${{ producto.precio }}
-                </option>
-              </select>
+              <div class="product-search-container">
+                <input 
+                  type="text" 
+                  v-model="busquedaProductoPromocion" 
+                  placeholder="Buscar por código o nombre..."
+                  class="search-input"
+                  @focus="mostrarListaProductosPromo = true"
+                />
+                <div class="select-with-close">
+                  <select 
+                    v-model="promotionForm.producto_id" 
+                    required 
+                    @focus="mostrarListaProductosPromo = true"
+                    @blur="cerrarSelectorPromocionDespuesDeDelay"
+                    @change="cerrarSelectorPromocion"
+                    :size="mostrarListaProductosPromo ? 8 : 1"
+                  >
+                    <option value="">Seleccione un producto</option>
+                    <option 
+                      v-for="producto in productosFiltradosPromocion" 
+                      :key="producto.codigo" 
+                      :value="producto.codigo"
+                    >
+                      [{{ producto.codigo }}] {{ producto.producto }} - ${{ producto.precioUnitario?.precioA || producto.costoTotal || 0 }}
+                    </option>
+                  </select>
+                  <button 
+                    v-if="mostrarListaProductosPromo" 
+                    type="button" 
+                    class="btn-close-selector"
+                    @click="cerrarSelectorPromocion"
+                    title="Cerrar selector"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <small class="helper-text">
+                  {{ productosFiltradosPromocion.length }} productos encontrados
+                </small>
+              </div>
             </div>
 
             <div class="form-group">
@@ -142,10 +187,10 @@
             <tbody>
               <tr v-for="promo in promociones" :key="promo.id">
                 <td>{{ promo.id }}</td>
-                <td>{{ promo.producto?.nombre_producto }}</td>
+                <td>{{ promo.producto?.producto }}</td>
                 <td>{{ promo.porcentaje_descuento }}%</td>
-                <td>${{ promo.producto?.precio }}</td>
-                <td>${{ calcularPrecioConDescuento(promo.producto?.precio, promo.porcentaje_descuento) }}</td>
+                <td>${{ promo.producto?.costoTotal || 0 }}</td>
+                <td>${{ calcularPrecioConDescuento(promo.producto?.costoTotal || 0, promo.porcentaje_descuento) }}</td>
                 <td>{{ formatDate(promo.fecha_inicio) }}</td>
                 <td>{{ formatDate(promo.fecha_fin) }}</td>
                 <td>
@@ -154,9 +199,9 @@
                   </span>
                 </td>
                 <td class="actions">
-                  <button v-if="puedeEditarPromocion()" @click="editPromotion(promo)" class="btn-icon" title="Editar">✏️</button>
-                  <button v-if="puedeEditarPromocion()" @click="deletePromotion(promo.id)" class="btn-icon" title="Eliminar">🗑️</button>
-                  <span v-if="isVendedor && !permisosVendedor.promociones" class="readonly-badge">👁️ Solo lectura</span>
+                  <button v-if="puedeEditarPromocion()" @click="editPromotion(promo)" class="btn-icon" title="Editar"><FontAwesomeIcon :icon="['fas', 'pencil']" /></button>
+                  <button v-if="puedeEditarPromocion()" @click="deletePromotion(promo.id)" class="btn-icon" title="Eliminar"><FontAwesomeIcon :icon="['fas', 'trash']" /></button>
+                  <span v-if="isVendedor && !permisosVendedor.promociones" class="readonly-badge"><FontAwesomeIcon :icon="['fas', 'eye']" /> Solo lectura</span>
                 </td>
               </tr>
             </tbody>
@@ -190,12 +235,45 @@
 
             <div class="form-group">
               <label>Producto Asociado (opcional):</label>
-              <select v-model="bannerForm.producto_id">
-                <option :value="null">Sin asociar</option>
-                <option v-for="producto in productos" :key="producto.id" :value="producto.id">
-                  {{ producto.nombre_producto }}
-                </option>
-              </select>
+              <div class="product-search-container">
+                <input 
+                  type="text" 
+                  v-model="busquedaProductoBanner" 
+                  placeholder="Buscar por código o nombre..."
+                  class="search-input"
+                  @focus="mostrarListaProductos = true"
+                />
+                <div class="select-with-close">
+                  <select 
+                    v-model="bannerForm.producto_id" 
+                    @focus="mostrarListaProductos = true"
+                    @blur="cerrarSelectorBannerDespuesDeDelay"
+                    @change="cerrarSelectorBanner"
+                    :size="mostrarListaProductos ? 8 : 1"
+                  >
+                    <option :value="null">Sin asociar</option>
+                    <option 
+                      v-for="producto in productosFiltradosBanner" 
+                      :key="producto.codigo" 
+                      :value="producto.codigo"
+                    >
+                      [{{ producto.codigo }}] {{ producto.producto }}
+                    </option>
+                  </select>
+                  <button 
+                    v-if="mostrarListaProductos" 
+                    type="button" 
+                    class="btn-close-selector"
+                    @click="cerrarSelectorBanner"
+                    title="Cerrar selector"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <small class="helper-text">
+                  {{ productosFiltradosBanner.length }} productos encontrados
+                </small>
+              </div>
             </div>
 
             <div class="form-actions">
@@ -225,8 +303,14 @@
               <img :src="banner.imagen_url" :alt="banner.titulo" />
               <div class="banner-info">
                 <h4>{{ banner.titulo }}</h4>
-                <p v-if="banner.producto">Asociado a: {{ banner.producto.nombre_producto }}</p>
-                <p v-else>Sin producto asociado</p>
+                <div v-if="banner.producto" class="banner-producto-info">
+                  <span class="producto-codigo">
+                    <FontAwesomeIcon :icon="['fas', 'tag']" />
+                    {{ banner.producto.codigo }}
+                  </span>
+                  <span class="producto-nombre">{{ banner.producto.producto }}</span>
+                </div>
+                <p v-else class="banner-sin-producto">Sin producto asociado</p>
                 <div class="banner-actions">
                   <button v-if="puedeEditarBanner()" @click="editBanner(banner)" class="btn-small">Editar</button>
                   <button v-if="puedeEditarBanner()" @click="deleteBanner(banner.id)" class="btn-small btn-danger">Eliminar</button>
@@ -236,6 +320,16 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Tab de Video -->
+      <div v-if="activeTab === 'video'" class="tab-panel">
+        <AdminVideo />
+      </div>
+
+      <!-- Tab de Importar Excel -->
+      <div v-if="activeTab === 'excel'" class="tab-panel">
+        <AdminExcel />
       </div>
 
       <!-- Tab de Logo -->
@@ -251,14 +345,69 @@
         
         <div v-if="puedeEditarLogo()" class="form-section">
           <form @submit.prevent="submitLogo" class="logo-form">
-            <div class="logo-preview" v-if="currentLogo">
+            <!-- Vista previa del logo actual -->
+            <div class="logo-preview" v-if="currentLogo || logoLoadError">
               <h3>Logo Actual:</h3>
-              <img :src="currentLogo" alt="Logo actual" class="current-logo" />
+              <img
+                v-if="currentLogo && !logoLoadError"
+                :src="currentLogo"
+                alt="Logo actual"
+                class="current-logo"
+                @error="logoLoadError = true"
+              />
+              <div v-if="logoLoadError" class="logo-load-error">
+                No se pudo cargar la imagen del logo. Verifica que la URL o el archivo sean accesibles.
+              </div>
             </div>
 
-            <div class="form-group">
-              <label>Nueva URL del Logo:</label>
-              <input type="text" v-model="logoForm.logo_url" required />
+            <!-- Selector de modo -->
+            <div class="logo-mode-selector">
+              <button
+                type="button"
+                :class="['mode-btn', { active: logoInputMode === 'url' }]"
+                @click="logoInputMode = 'url'; logoFile = null; logoFilePreview = ''"
+              >
+                🔗 Enlace URL
+              </button>
+              <button
+                type="button"
+                :class="['mode-btn', { active: logoInputMode === 'archivo' }]"
+                @click="logoInputMode = 'archivo'; logoForm.logo_url = ''"
+              >
+                📁 Subir Archivo
+              </button>
+            </div>
+
+            <!-- Modo URL -->
+            <div v-if="logoInputMode === 'url'" class="form-group">
+              <label>URL del Logo:</label>
+              <input
+                type="url"
+                v-model="logoForm.logo_url"
+                placeholder="https://ejemplo.com/logo.png"
+                :required="logoInputMode === 'url'"
+              />
+              <small class="form-hint">Ingresa el enlace directo a la imagen del logo.</small>
+              <div v-if="logoForm.logo_url" class="logo-url-preview">
+                <p>Vista previa:</p>
+                <img :src="logoForm.logo_url" alt="Vista previa URL" class="preview-img" @error="$event.target.style.display='none'" />
+              </div>
+            </div>
+
+            <!-- Modo Archivo -->
+            <div v-if="logoInputMode === 'archivo'" class="form-group">
+              <label>Seleccionar Archivo:</label>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                @change="handleLogoFileChange"
+                :required="logoInputMode === 'archivo'"
+              />
+              <small class="form-hint">Formatos aceptados: JPG, PNG, WebP, GIF. Tamaño máximo: 5 MB.</small>
+              <div v-if="logoFilePreview" class="logo-url-preview">
+                <p>Vista previa:</p>
+                <img :src="logoFilePreview" alt="Vista previa del archivo" class="preview-img" />
+              </div>
             </div>
 
             <div class="form-actions">
@@ -270,6 +419,16 @@
             </div>
           </form>
         </div>
+      </div>
+
+      <!-- Tab de Personalización -->
+      <div v-if="activeTab === 'personalizacion' && isAdmin" class="tab-panel">
+        <AdminPersonalizacion />
+      </div>
+
+      <!-- Tab de Métricas -->
+      <div v-if="activeTab === 'metricas' && isAdmin" class="tab-panel">
+        <AdminMetricas />
       </div>
 
       <!-- Tab de Usuarios -->
@@ -344,7 +503,10 @@
                   type="text"
                   v-model="userForm.telefono"
                   pattern="[0-9+\-\s()]+"
+                  title="Solo números, espacios y caracteres: + - ( )"
+                  placeholder="+593 99 999 9999 o 0999999999"
                 />
+                <small class="field-help">Ejemplo: +593 99 999 9999 o (02) 234-5678</small>
               </div>
             </div>
 
@@ -356,6 +518,7 @@
                   <option value="administrador">Administrador</option>
                   <option value="vendedor">Vendedor</option>
                   <option value="tecnico">Técnico</option>
+                  <option value="cliente">Cliente</option>
                 </select>
               </div>
             </div>
@@ -418,13 +581,19 @@
                 <td>{{ formatDate(user.fecha_creacion) }}</td>
                 <td>{{ user.ultimo_acceso ? formatDate(user.ultimo_acceso) : 'Nunca' }}</td>
                 <td class="actions">
-                  <button v-if="isAdmin" @click="editUser(user)" class="btn-icon" title="Editar">✏️</button>
+                  <button v-if="isAdmin" @click="editUser(user)" class="btn-icon" title="Editar"><FontAwesomeIcon :icon="['fas', 'pencil']" /></button>
+                  <button 
+                    v-if="isAdmin && !isCurrentUser(user.id)" 
+                    @click="openResetPasswordModal(user)" 
+                    class="btn-icon btn-warning" 
+                    title="Resetear Contraseña"
+                  ><FontAwesomeIcon :icon="['fas', 'key']" /></button>
                   <button 
                     v-if="isAdmin && !isCurrentUser(user.id)" 
                     @click="deleteUser(user.id)" 
                     class="btn-icon" 
                     title="Eliminar"
-                  >🗑️</button>
+                  ><FontAwesomeIcon :icon="['fas', 'trash']" /></button>
                   <span v-if="isCurrentUser(user.id)" class="readonly-badge">👤 Tú</span>
                 </td>
               </tr>
@@ -583,19 +752,19 @@
                     @click="editPermiso(permiso)" 
                     class="btn-icon" 
                     title="Editar"
-                  >✏️</button>
+                  ><FontAwesomeIcon :icon="['fas', 'pencil']" /></button>
                   <button 
                     v-if="isAdmin && permiso.activo && !isPermisoExpirado(permiso)"
                     @click="revocarPermiso(permiso.id)" 
                     class="btn-icon btn-warning" 
                     title="Revocar"
-                  >🚫</button>
+                  ><FontAwesomeIcon :icon="['fas', 'ban']" /></button>
                   <button 
                     v-if="isAdmin"
                     @click="deletePermiso(permiso.id)" 
                     class="btn-icon" 
                     title="Eliminar"
-                  >🗑️</button>
+                  ><FontAwesomeIcon :icon="['fas', 'trash']" /></button>
                 </td>
               </tr>
             </tbody>
@@ -603,1358 +772,66 @@
         </div>
       </div>
     </div>
+    </div><!-- /.panel-body -->
+
+    <!-- Modal para Resetear Contraseña -->
+    <div v-if="showResetPasswordModal" class="modal-overlay" @click.self="closeResetPasswordModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>🔑 Resetear Contraseña</h3>
+          <button class="modal-close" @click="closeResetPasswordModal">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="warning-text">
+            Vas a resetear la contraseña del usuario:
+            <strong>{{ resetPasswordUser?.nombre }} {{ resetPasswordUser?.apellido }}</strong>
+            ({{ resetPasswordUser?.username }})
+          </p>
+          
+          <form @submit.prevent="submitResetPassword" class="reset-password-form">
+            <div class="form-group">
+              <label>Nueva Contraseña: <span class="required">*</span></label>
+              <input
+                type="password"
+                v-model="resetPasswordForm.nuevaPassword"
+                placeholder="Mínimo 6 caracteres"
+                required
+                minlength="6"
+              />
+              <small class="help-text">
+                La contraseña debe tener al menos 6 caracteres, una letra, un número y un carácter especial (@$!%*?&.,-_:)
+              </small>
+            </div>
+
+            <div class="form-group">
+              <label>Confirmar Nueva Contraseña: <span class="required">*</span></label>
+              <input
+                type="password"
+                v-model="resetPasswordForm.confirmarPassword"
+                placeholder="Repite la contraseña"
+                required
+                minlength="6"
+              />
+            </div>
+
+            <div v-if="resetPasswordMessage" :class="['message', resetPasswordMessageType]">
+              {{ resetPasswordMessage }}
+            </div>
+
+            <div class="modal-actions">
+              <button type="submit" class="btn btn-primary" :disabled="resettingPassword">
+                {{ resettingPassword ? 'Reseteando...' : '🔑 Resetear Contraseña' }}
+              </button>
+              <button type="button" class="btn btn-secondary" @click="closeResetPasswordModal" :disabled="resettingPassword">
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
-<script>
-import axios from 'axios';
-import { API_BASE_URL } from '@/config/api';
-import AdminProductos from './AdminProductos.vue';
-import NotificationsPanel from '../NotificationsPanel/NotificationsPanel.vue';
-import NotificationsBell from '../NotificationsPanel/NotificationsBell.vue';
-
-export default {
-  name: 'AdminPanelMain',
-  components: {
-    AdminProductos,
-    NotificationsPanel,
-    NotificationsBell,
-  },
-  data() {
-    return {
-      API_BASE_URL, // Exponer para usar en template si es necesario
-      activeTab: 'promociones',
-      tabs: [
-        { id: 'productos', label: 'Productos' },
-        { id: 'promociones', label: 'Promociones' },
-        { id: 'banners', label: 'Banners' },
-        { id: 'logo', label: 'Logo' },
-        { id: 'usuarios', label: 'Usuarios' },
-        { id: 'permisos', label: 'Permisos Temporales' },
-      ],
-      isAuthenticated: !!localStorage.getItem('access_token'),
-
-      // Permisos
-      userRole: '',
-      isAdmin: false,
-      isVendedor: false,
-
-      // Promociones
-      promociones: [],
-      productos: [],
-      editingPromotion: null,
-      promotionForm: {
-        producto_id: '',
-        porcentaje_descuento: 0,
-        fecha_inicio: '',
-        fecha_fin: '',
-        activa: true,
-      },
-      promotionMessage: '',
-      promotionMessageType: '',
-
-      // Banners
-      banners: [],
-      editingBanner: null,
-      bannerForm: {
-        titulo: '',
-        imagen_url: '',
-        producto_id: null,
-      },
-      bannerMessage: '',
-      bannerMessageType: '',
-
-      // Logo
-      currentLogo: '',
-      logoForm: {
-        logo_url: '',
-      },
-      logoMessage: '',
-      logoMessageType: '',
-
-      // Usuarios
-      usuarios: [],
-      editingUser: null,
-      currentUserId: null,
-      userForm: {
-        nombre: '',
-        apellido: '',
-        username: '',
-        email: '',
-        password: '',
-        telefono: '',
-        direccion: '',
-        rol: '',
-      },
-      userMessage: '',
-      userMessageType: '',
-
-      // Permisos Temporales
-      permisos: [],
-      vendedores: [],
-      editingPermiso: null,
-      permisoFilter: 'all', // 'all', 'activos', 'expirados'
-      permisoForm: {
-        user_id: '',
-        tipo_permiso: '',
-        fecha_expiracion: '',
-        activo: true,
-        razon: '',
-      },
-      permisoMessage: '',
-      permisoMessageType: '',
-
-      // Control de permisos para vendedores
-      permisosVendedor: {
-        banners: false,
-        promociones: false,
-        logo: false,
-      },
-    };
-  },
-
-  mounted() {
-    this.checkAuth();
-    this.loadPromociones();
-    this.loadProductos();
-    this.loadBanners();
-    this.loadLogo();
-    this.loadUsuarios();
-    this.loadCurrentUserId();
-    this.loadPermisos();
-    this.loadVendedores();
-    this.loadPermisosVendedor();
-  },
-
-  methods: {
-    goToHome() {
-      this.$router.push('/home');
-    },
-    
-    checkAuth() {
-      const role = localStorage.getItem('user_rol');
-      this.userRole = role;
-      this.isAdmin = role === 'administrador';
-      this.isVendedor = role === 'vendedor';
-      
-      if (role !== 'administrador' && role !== 'vendedor') {
-        this.$router.push('/');
-        alert('Acceso denegado: Solo administradores y vendedores');
-      }
-    },
-
-    async loadPermisosVendedor() {
-      if (!this.isVendedor) return;
-      
-      try {
-        const [bannersRes, promocionesRes, logoRes] = await Promise.all([
-          axios.get(`${API_BASE_URL}/permisos-temporales/verificar/banners`, this.getAuthHeaders()),
-          axios.get(`${API_BASE_URL}/permisos-temporales/verificar/promociones`, this.getAuthHeaders()),
-          axios.get(`${API_BASE_URL}/permisos-temporales/verificar/logo`, this.getAuthHeaders()),
-        ]);
-
-        this.permisosVendedor = {
-          banners: bannersRes.data.tienePermiso,
-          promociones: promocionesRes.data.tienePermiso,
-          logo: logoRes.data.tienePermiso,
-        };
-      } catch (error) {
-        console.error('Error al verificar permisos del vendedor:', error);
-      }
-    },
-
-    puedeEditarPromocion() {
-      return this.isAdmin || (this.isVendedor && this.permisosVendedor.promociones);
-    },
-
-    puedeEditarBanner() {
-      return this.isAdmin || (this.isVendedor && this.permisosVendedor.banners);
-    },
-
-    puedeEditarLogo() {
-      return this.isAdmin || (this.isVendedor && this.permisosVendedor.logo);
-    },
-
-    getAuthHeaders() {
-      const token = localStorage.getItem('access_token');
-      return {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      };
-    },
-
-    // ========== PROMOCIONES ==========
-    async loadPromociones() {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/promociones`);
-        this.promociones = response.data;
-      } catch (error) {
-        console.error('Error al cargar promociones:', error);
-      }
-    },
-
-    async loadProductos() {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/tienda/productos`);
-        this.productos = response.data;
-      } catch (error) {
-        console.error('Error al cargar productos:', error);
-      }
-    },
-
-    async submitPromotion() {
-      try {
-        if (this.editingPromotion) {
-          await axios.patch(
-            `${API_BASE_URL}/promociones/${this.editingPromotion.id}`,
-            this.promotionForm,
-            this.getAuthHeaders()
-          );
-          this.showPromotionMessage('Promoción actualizada exitosamente', 'success');
-        } else {
-          await axios.post(
-            `${API_BASE_URL}/promociones`,
-            this.promotionForm,
-            this.getAuthHeaders()
-          );
-          this.showPromotionMessage('Promoción creada exitosamente', 'success');
-        }
-        this.resetPromotionForm();
-        this.loadPromociones();
-      } catch (error) {
-        console.error('Error al guardar promoción:', error);
-        this.showPromotionMessage(
-          error.response?.data?.message || 'Error al guardar la promoción',
-          'error'
-        );
-      }
-    },
-
-    editPromotion(promo) {
-      this.editingPromotion = promo;
-      this.promotionForm = {
-        producto_id: promo.producto_id,
-        porcentaje_descuento: promo.porcentaje_descuento,
-        fecha_inicio: this.formatDateForInput(promo.fecha_inicio),
-        fecha_fin: this.formatDateForInput(promo.fecha_fin),
-        activa: promo.activa,
-      };
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    },
-
-    async deletePromotion(id) {
-      if (!confirm('¿Está seguro de eliminar esta promoción?')) return;
-
-      try {
-        await axios.delete(
-          `${API_BASE_URL}/promociones/${id}`,
-          this.getAuthHeaders()
-        );
-        this.showPromotionMessage('Promoción eliminada exitosamente', 'success');
-        this.loadPromociones();
-      } catch (error) {
-        console.error('Error al eliminar promoción:', error);
-        this.showPromotionMessage('Error al eliminar la promoción', 'error');
-      }
-    },
-
-    cancelEditPromotion() {
-      this.resetPromotionForm();
-    },
-
-    resetPromotionForm() {
-      this.editingPromotion = null;
-      this.promotionForm = {
-        producto_id: '',
-        porcentaje_descuento: 0,
-        fecha_inicio: '',
-        fecha_fin: '',
-        activa: true,
-      };
-    },
-
-    showPromotionMessage(message, type) {
-      this.promotionMessage = message;
-      this.promotionMessageType = type;
-      setTimeout(() => {
-        this.promotionMessage = '';
-      }, 3000);
-    },
-
-    // ========== BANNERS ==========
-    async loadBanners() {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/tienda/banners`);
-        this.banners = response.data.data || response.data;
-      } catch (error) {
-        console.error('Error al cargar banners:', error);
-      }
-    },
-
-    async submitBanner() {
-      try {
-        if (this.editingBanner) {
-          await axios.patch(
-            `${API_BASE_URL}/tienda/banners/${this.editingBanner.id}`,
-            this.bannerForm,
-            this.getAuthHeaders()
-          );
-          this.showBannerMessage('Banner actualizado exitosamente', 'success');
-        } else {
-          await axios.post(
-            `${API_BASE_URL}/tienda/banners`,
-            this.bannerForm,
-            this.getAuthHeaders()
-          );
-          this.showBannerMessage('Banner creado exitosamente', 'success');
-        }
-        this.resetBannerForm();
-        this.loadBanners();
-      } catch (error) {
-        console.error('Error al guardar banner:', error);
-        this.showBannerMessage('Error al guardar el banner', 'error');
-      }
-    },
-
-    editBanner(banner) {
-      this.editingBanner = banner;
-      this.bannerForm = {
-        titulo: banner.titulo,
-        imagen_url: banner.imagen_url,
-        producto_id: banner.producto_id,
-      };
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    },
-
-    async deleteBanner(id) {
-      if (!confirm('¿Está seguro de eliminar este banner?')) return;
-
-      try {
-        await axios.delete(
-          `${API_BASE_URL}/tienda/banners/${id}`,
-          this.getAuthHeaders()
-        );
-        this.showBannerMessage('Banner eliminado exitosamente', 'success');
-        this.loadBanners();
-      } catch (error) {
-        console.error('Error al eliminar banner:', error);
-        this.showBannerMessage('Error al eliminar el banner', 'error');
-      }
-    },
-
-    cancelEditBanner() {
-      this.resetBannerForm();
-    },
-
-    resetBannerForm() {
-      this.editingBanner = null;
-      this.bannerForm = {
-        titulo: '',
-        imagen_url: '',
-        producto_id: null,
-      };
-    },
-
-    showBannerMessage(message, type) {
-      this.bannerMessage = message;
-      this.bannerMessageType = type;
-      setTimeout(() => {
-        this.bannerMessage = '';
-      }, 3000);
-    },
-
-    // ========== LOGO ==========
-    async loadLogo() {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/configuracion/logo_url`);
-        this.currentLogo = response.data.valor || response.data;
-      } catch (error) {
-        console.log('No hay logo configurado');
-      }
-    },
-
-    async submitLogo() {
-      try {
-        await axios.post(
-          `${API_BASE_URL}/configuracion`,
-          {
-            clave: 'logo_url',
-            valor: this.logoForm.logo_url,
-          },
-          this.getAuthHeaders()
-        );
-        this.showLogoMessage('Logo actualizado exitosamente', 'success');
-        this.loadLogo();
-        this.logoForm.logo_url = '';
-      } catch (error) {
-        console.error('Error al actualizar logo:', error);
-        this.showLogoMessage('Error al actualizar el logo', 'error');
-      }
-    },
-
-    showLogoMessage(message, type) {
-      this.logoMessage = message;
-      this.logoMessageType = type;
-      setTimeout(() => {
-        this.logoMessage = '';
-      }, 3000);
-    },
-
-    // ========== USUARIOS ==========
-    async loadUsuarios() {
-      try {
-        const response = await axios.get(
-          `${API_BASE_URL}/usuarios`,
-          this.getAuthHeaders()
-        );
-        this.usuarios = response.data;
-      } catch (error) {
-        console.error('Error al cargar usuarios:', error);
-      }
-    },
-
-    async loadCurrentUserId() {
-      try {
-        const response = await axios.get(
-          `${API_BASE_URL}/usuarios/perfil`,
-          this.getAuthHeaders()
-        );
-        this.currentUserId = response.data.id;
-      } catch (error) {
-        console.error('Error al obtener ID del usuario actual:', error);
-      }
-    },
-
-    async submitUser() {
-      try {
-        // Debug: verificar token y headers
-        const token = localStorage.getItem('access_token');
-        const headers = this.getAuthHeaders();
-        console.log('Token:', token ? 'Existe' : 'No existe');
-        console.log('Headers:', headers);
-        console.log('UserForm:', this.userForm);
-
-        if (this.editingUser) {
-          // Actualizar usuario (sin password)
-          // eslint-disable-next-line no-unused-vars
-          const { password, ...updateData } = this.userForm;
-          await axios.patch(
-            `${API_BASE_URL}/usuarios/${this.editingUser.id}`,
-            updateData,
-            this.getAuthHeaders()
-          );
-          this.showUserMessage('Usuario actualizado exitosamente', 'success');
-        } else {
-          // Crear usuario nuevo
-          console.log('Enviando POST a:', `${API_BASE_URL}/usuarios`);
-          await axios.post(
-            `${API_BASE_URL}/usuarios`,
-            this.userForm,
-            this.getAuthHeaders()
-          );
-          this.showUserMessage('Usuario creado exitosamente', 'success');
-        }
-        this.resetUserForm();
-        this.loadUsuarios();
-      } catch (error) {
-        console.error('Error completo al guardar usuario:', error);
-        console.error('Response data:', error.response?.data);
-        console.error('Response status:', error.response?.status);
-        console.error('Response headers:', error.response?.headers);
-        this.showUserMessage(
-          error.response?.data?.message || 'Error al guardar el usuario',
-          'error'
-        );
-      }
-    },
-
-    editUser(user) {
-      this.editingUser = user;
-      this.userForm = {
-        nombre: user.nombre,
-        apellido: user.apellido,
-        username: user.username,
-        email: user.email,
-        password: '', // No cargar password
-        telefono: user.telefono || '',
-        direccion: user.direccion || '',
-        rol: user.rol,
-      };
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    },
-
-    async deleteUser(id) {
-      if (!confirm('¿Está seguro de eliminar este usuario? Esta acción no se puede deshacer.')) return;
-
-      try {
-        await axios.delete(
-          `${API_BASE_URL}/usuarios/${id}`,
-          this.getAuthHeaders()
-        );
-        this.showUserMessage('Usuario eliminado exitosamente', 'success');
-        this.loadUsuarios();
-      } catch (error) {
-        console.error('Error al eliminar usuario:', error);
-        this.showUserMessage(
-          error.response?.data?.message || 'Error al eliminar el usuario',
-          'error'
-        );
-      }
-    },
-
-    cancelEditUser() {
-      this.resetUserForm();
-    },
-
-    resetUserForm() {
-      this.editingUser = null;
-      this.userForm = {
-        nombre: '',
-        apellido: '',
-        username: '',
-        email: '',
-        password: '',
-        telefono: '',
-        direccion: '',
-        rol: '',
-      };
-    },
-
-    showUserMessage(message, type) {
-      this.userMessage = message;
-      this.userMessageType = type;
-      setTimeout(() => {
-        this.userMessage = '';
-      }, 3000);
-    },
-
-    isCurrentUser(userId) {
-      return this.currentUserId === userId;
-    },
-
-    getRoleClass(rol) {
-      const roleClasses = {
-        'administrador': 'role-admin',
-        'vendedor': 'role-vendedor',
-        'tecnico': 'role-tecnico'
-      };
-      return roleClasses[rol] || 'role-default';
-    },
-
-    getRoleLabel(rol) {
-      const roleLabels = {
-        'administrador': 'Administrador',
-        'vendedor': 'Vendedor',
-        'tecnico': 'Técnico'
-      };
-      return roleLabels[rol] || rol;
-    },
-
-    // ========== UTILIDADES ==========
-    calcularPrecioConDescuento(precio, descuento) {
-      if (!precio || !descuento) return precio;
-      return (precio - (precio * descuento) / 100).toFixed(2);
-    },
-
-    formatDate(dateString) {
-      const date = new Date(dateString);
-      return date.toLocaleString('es-ES', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    },
-
-    formatDateForInput(dateString) {
-      const date = new Date(dateString);
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      return `${year}-${month}-${day}T${hours}:${minutes}`;
-    },
-
-    // ========== PERMISOS TEMPORALES ==========
-    async loadPermisos() {
-      try {
-        const response = await axios.get(
-          `${API_BASE_URL}/permisos-temporales`,
-          this.getAuthHeaders()
-        );
-        this.permisos = response.data;
-      } catch (error) {
-        console.error('Error al cargar permisos:', error);
-      }
-    },
-
-    async loadVendedores() {
-      try {
-        const response = await axios.get(
-          `${API_BASE_URL}/usuarios`,
-          this.getAuthHeaders()
-        );
-        this.vendedores = response.data.filter(u => u.rol === 'vendedor');
-      } catch (error) {
-        console.error('Error al cargar vendedores:', error);
-      }
-    },
-
-    async submitPermiso() {
-      try {
-        if (this.editingPermiso) {
-          await axios.patch(
-            `${API_BASE_URL}/permisos-temporales/${this.editingPermiso.id}`,
-            {
-              fecha_expiracion: this.permisoForm.fecha_expiracion,
-              activo: this.permisoForm.activo,
-              razon: this.permisoForm.razon,
-            },
-            this.getAuthHeaders()
-          );
-          this.showPermisoMessage('Permiso actualizado exitosamente', 'success');
-        } else {
-          // Convertir user_id a número y asegurar formato correcto
-          const permisoData = {
-            user_id: parseInt(this.permisoForm.user_id),
-            tipo_permiso: this.permisoForm.tipo_permiso,
-            fecha_expiracion: new Date(this.permisoForm.fecha_expiracion).toISOString(),
-            razon: this.permisoForm.razon || undefined,
-          };
-          
-          await axios.post(
-            `${API_BASE_URL}/permisos-temporales`,
-            permisoData,
-            this.getAuthHeaders()
-          );
-          this.showPermisoMessage('Permiso otorgado exitosamente', 'success');
-        }
-        this.resetPermisoForm();
-        this.loadPermisos();
-      } catch (error) {
-        console.error('Error al guardar permiso:', error);
-        this.showPermisoMessage(
-          error.response?.data?.message || 'Error al guardar el permiso',
-          'error'
-        );
-      }
-    },
-
-    editPermiso(permiso) {
-      this.editingPermiso = permiso;
-      this.permisoForm = {
-        user_id: permiso.user_id,
-        tipo_permiso: permiso.tipo_permiso,
-        fecha_expiracion: this.formatDateForInput(permiso.fecha_expiracion),
-        activo: permiso.activo,
-        razon: permiso.razon || '',
-      };
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    },
-
-    async revocarPermiso(id) {
-      if (!confirm('¿Está seguro de revocar este permiso?')) return;
-
-      try {
-        await axios.patch(
-          `${API_BASE_URL}/permisos-temporales/${id}/revocar`,
-          {},
-          this.getAuthHeaders()
-        );
-        this.showPermisoMessage('Permiso revocado exitosamente', 'success');
-        this.loadPermisos();
-      } catch (error) {
-        console.error('Error al revocar permiso:', error);
-        this.showPermisoMessage(
-          error.response?.data?.message || 'Error al revocar el permiso',
-          'error'
-        );
-      }
-    },
-
-    async deletePermiso(id) {
-      if (!confirm('¿Está seguro de eliminar este permiso? Esta acción no se puede deshacer.')) return;
-
-      try {
-        await axios.delete(
-          `${API_BASE_URL}/permisos-temporales/${id}`,
-          this.getAuthHeaders()
-        );
-        this.showPermisoMessage('Permiso eliminado exitosamente', 'success');
-        this.loadPermisos();
-      } catch (error) {
-        console.error('Error al eliminar permiso:', error);
-        this.showPermisoMessage(
-          error.response?.data?.message || 'Error al eliminar el permiso',
-          'error'
-        );
-      }
-    },
-
-    cancelEditPermiso() {
-      this.resetPermisoForm();
-    },
-
-    resetPermisoForm() {
-      this.editingPermiso = null;
-      this.permisoForm = {
-        user_id: '',
-        tipo_permiso: '',
-        fecha_expiracion: '',
-        activo: true,
-        razon: '',
-      };
-    },
-
-    showPermisoMessage(message, type) {
-      this.permisoMessage = message;
-      this.permisoMessageType = type;
-      setTimeout(() => {
-        this.permisoMessage = '';
-      }, 3000);
-    },
-
-    getCurrentDateTime() {
-      const now = new Date();
-      return this.formatDateForInput(now);
-    },
-
-    isPermisoExpirado(permiso) {
-      return new Date(permiso.fecha_expiracion) < new Date();
-    },
-
-    getPermisoStatus(permiso) {
-      if (!permiso.activo) return 'Revocado';
-      if (this.isPermisoExpirado(permiso)) return 'Expirado';
-      return 'Activo';
-    },
-
-    getPermisoStatusClass(permiso) {
-      if (!permiso.activo) return 'inactive';
-      if (this.isPermisoExpirado(permiso)) return 'expired';
-      return 'active';
-    },
-
-    getPermisoLabel(tipo) {
-      const labels = {
-        'banners': 'Banners',
-        'promociones': 'Promociones',
-        'logo': 'Logo',
-        'all': 'Todos'
-      };
-      return labels[tipo] || tipo;
-    },
-
-    getPermisoBadgeClass(tipo) {
-      const classes = {
-        'banners': 'permiso-banners',
-        'promociones': 'permiso-promociones',
-        'logo': 'permiso-logo',
-        'all': 'permiso-all'
-      };
-      return classes[tipo] || 'permiso-default';
-    },
-
-    truncateText(text, maxLength) {
-      if (!text) return '';
-      return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-    },
-  },
-
-  computed: {
-    visibleTabs() {
-      // Filtrar tabs según el rol del usuario
-      return this.tabs.filter(tab => {
-        // Solo administradores ven el tab de usuarios y permisos
-        if ((tab.id === 'usuarios' || tab.id === 'permisos') && !this.isAdmin) {
-          return false;
-        }
-        return true;
-      });
-    },
-
-    permisosFiltrados() {
-      const now = new Date();
-      
-      return this.permisos.filter(permiso => {
-        if (this.permisoFilter === 'activos') {
-          return permiso.activo && new Date(permiso.fecha_expiracion) > now;
-        } else if (this.permisoFilter === 'expirados') {
-          return !permiso.activo || new Date(permiso.fecha_expiracion) <= now;
-        }
-        return true; // 'all'
-      });
-    },
-  },
-};
-</script>
-
-<style scoped>
-.admin-panel {
-  max-width: 1400px;
-  margin: 20px auto;
-  padding: 20px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 30px;
-  border-bottom: 2px solid #0066cc;
-  padding-bottom: 15px;
-}
-
-.panel-header h1 {
-  color: #333;
-  font-size: 28px;
-  margin: 0;
-  flex: 1;
-  text-align: center;
-}
-
-.back-button {
-  padding: 10px 20px;
-  background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
-}
-
-.back-button:hover {
-  background: linear-gradient(135deg, #45a049 0%, #3d8b40 100%);
-  transform: translateX(-3px);
-  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
-}
-
-.back-button:active {
-  transform: translateX(-1px);
-}
-
-.spacer {
-  width: 140px; /* Mismo ancho aproximado del botón para centrar el título */
-}
-
-/* Tabs */
-.tabs {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 30px;
-  border-bottom: 2px solid #e0e0e0;
-}
-
-.tab-button {
-  padding: 12px 24px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: 500;
-  color: #666;
-  border-bottom: 3px solid transparent;
-  transition: all 0.3s ease;
-}
-
-.tab-button:hover {
-  color: #0066cc;
-}
-
-.tab-button.active {
-  color: #0066cc;
-  border-bottom-color: #0066cc;
-}
-
-/* Tab Content */
-.tab-panel {
-  animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.tab-panel h2 {
-  color: #333;
-  font-size: 24px;
-  margin-bottom: 20px;
-}
-
-.tab-panel h3 {
-  color: #555;
-  font-size: 18px;
-  margin-bottom: 15px;
-}
-
-/* Forms */
-.form-section {
-  background: #f8f9fa;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 30px;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-  color: #555;
-}
-
-.form-group input[type="text"],
-.form-group input[type="number"],
-.form-group input[type="datetime-local"],
-.form-group select {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.form-group input[type="checkbox"] {
-  margin-right: 8px;
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-}
-
-.form-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.btn-primary {
-  background: #0066cc;
-  color: white;
-}
-
-.btn-primary:hover {
-  background: #0052a3;
-}
-
-.btn-secondary {
-  background: #6c757d;
-  color: white;
-}
-
-.btn-secondary:hover {
-  background: #545b62;
-}
-
-.btn-small {
-  padding: 6px 12px;
-  font-size: 12px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  background: #0066cc;
-  color: white;
-}
-
-.btn-small:hover {
-  background: #0052a3;
-}
-
-.btn-danger {
-  background: #dc3545;
-}
-
-.btn-danger:hover {
-  background: #c82333;
-}
-
-/* Messages */
-.info-message {
-  padding: 12px;
-  border-radius: 4px;
-  margin-bottom: 20px;
-  background: #d1ecf1;
-  color: #0c5460;
-  border: 1px solid #bee5eb;
-  font-weight: 500;
-}
-
-.info-message.success {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
-}
-
-.message {
-  padding: 12px;
-  border-radius: 4px;
-  margin-top: 15px;
-  font-weight: 500;
-}
-
-.message.success {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
-}
-
-.message.error {
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
-}
-
-/* Data Table */
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 20px;
-  background: white;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.data-table thead {
-  background: #0066cc;
-  color: white;
-}
-
-.data-table th,
-.data-table td {
-  padding: 12px;
-  text-align: left;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.data-table tbody tr:hover {
-  background: #f8f9fa;
-}
-
-.data-table .actions {
-  display: flex;
-  gap: 8px;
-}
-
-.btn-icon {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 18px;
-  padding: 4px;
-  transition: transform 0.2s ease;
-}
-
-.btn-icon:hover {
-  transform: scale(1.2);
-}
-
-/* Status Badge */
-.status-badge {
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.status-badge.active {
-  background: #d4edda;
-  color: #155724;
-}
-
-.status-badge.inactive {
-  background: #f8d7da;
-  color: #721c24;
-}
-
-.status-badge.expired {
-  background: #fff3cd;
-  color: #856404;
-}
-
-/* Permisos Temporales */
-.permiso-form input[type="datetime-local"],
-.permiso-form select,
-.permiso-form textarea {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  font-family: inherit;
-}
-
-.permiso-form textarea {
-  resize: vertical;
-}
-
-.filter-tabs {
-  display: flex;
-  gap: 10px;
-  margin: 20px 0;
-}
-
-.filter-tabs button {
-  padding: 8px 16px;
-  border: 2px solid #0066cc;
-  background: white;
-  color: #0066cc;
-  border-radius: 4px;
-  cursor: pointer;
-  font-weight: 500;
-  transition: all 0.3s ease;
-}
-
-.filter-tabs button.active {
-  background: #0066cc;
-  color: white;
-}
-
-.filter-tabs button:hover {
-  background: #0052a3;
-  color: white;
-}
-
-.permiso-badge {
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-  display: inline-block;
-}
-
-.permiso-badge.permiso-banners {
-  background: #e3f2fd;
-  color: #1976d2;
-}
-
-.permiso-badge.permiso-promociones {
-  background: #fce4ec;
-  color: #c2185b;
-}
-
-.permiso-badge.permiso-logo {
-  background: #f3e5f5;
-  color: #7b1fa2;
-}
-
-.permiso-badge.permiso-all {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.permiso-badge.permiso-default {
-  background: #e0e0e0;
-  color: #666;
-}
-
-.razon-text {
-  cursor: help;
-  text-decoration: underline dotted;
-}
-
-.btn-warning {
-  background: #ff9800 !important;
-}
-
-.btn-warning:hover {
-  background: #f57c00 !important;
-}
-
-/* Banners Grid */
-.banners-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
-  margin-top: 20px;
-}
-
-.banner-card {
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  overflow: hidden;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.banner-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.banner-card img {
-  width: 100%;
-  height: 200px;
-  object-fit: cover;
-}
-
-.banner-info {
-  padding: 15px;
-}
-
-.banner-info h4 {
-  margin: 0 0 10px 0;
-  color: #333;
-  font-size: 16px;
-}
-
-.banner-info p {
-  margin: 0 0 15px 0;
-  color: #666;
-  font-size: 14px;
-}
-
-.banner-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-/* Mensajes informativos */
-.info-message {
-  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-  border-left: 4px solid #2196f3;
-  padding: 15px 20px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  color: #1565c0;
-  font-size: 14px;
-  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.1);
-}
-
-.readonly-badge {
-  background: #e0e0e0;
-  color: #666;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* Logo */
-.logo-preview {
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-.current-logo {
-  max-width: 300px;
-  max-height: 150px;
-  object-fit: contain;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 10px;
-  background: white;
-}
-
-/* Usuarios */
-.user-form input[type="email"],
-.user-form input[type="password"],
-.user-form input[type="text"],
-.user-form select,
-.user-form textarea {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  font-family: inherit;
-}
-
-.user-form textarea {
-  resize: vertical;
-}
-
-.user-form input:disabled {
-  background-color: #f5f5f5;
-  cursor: not-allowed;
-}
-
-.users-list {
-  margin-top: 30px;
-}
-
-.role-badge {
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
-  display: inline-block;
-}
-
-.role-badge.role-admin {
-  background: #fce4ec;
-  color: #c2185b;
-}
-
-.role-badge.role-vendedor {
-  background: #e3f2fd;
-  color: #1976d2;
-}
-
-.role-badge.role-tecnico {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.role-badge.role-default {
-  background: #e0e0e0;
-  color: #666;
-}
-
-@media (max-width: 768px) {
-  .form-row {
-    grid-template-columns: 1fr;
-  }
-
-  .banners-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .data-table {
-    font-size: 12px;
-  }
-
-  .data-table th,
-  .data-table td {
-    padding: 8px;
-  }
-}
-</style>
+<script src="./AdminPanel.js"></script>
+<style scoped src="./AdminPanel.css"></style>

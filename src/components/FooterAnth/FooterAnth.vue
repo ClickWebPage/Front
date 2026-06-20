@@ -21,15 +21,6 @@
 
     <div class="footer-columns">
       <div class="footer-column">
-      <h4>Productos</h4>
-      <ul>
-        <li><a href="/productos/categoria/laptops">Laptops</a></li>
-        <li><a href="/productos/categoria/monitores">Monitores</a></li>
-        <li><a href="/productos/categoria/perifericos">Periféricos</a></li>
-        <li><a href="/productos/categoria/componentes">Componentes</a></li>
-      </ul>
-      </div>
-      <div class="footer-column">
       <h4>Soporte</h4>
       <ul>
         <li><a href="/servicio-tecnico">Servicio Técnico</a></li>

@@ -1,7 +1,6 @@
 import HeaderAnth from "../HeaderAnth/HeaderAnth.vue";
 import FooterAnth from "../FooterAnth/FooterAnth.vue";
-import axios from 'axios';
-import { API_BASE_URL } from '@/config/api';
+import apiClient from '@/services/api';
 
 export default {
   name: "CarritoCompras",
@@ -30,7 +29,7 @@ export default {
     subtotalConIVA() {
       // Total de productos con IVA incluido
       return this.productosCarrito.reduce((total, item) => {
-        return total + (parseFloat(item.precio) * item.cantidad);
+        return total + (parseFloat(item.costoTotal) * item.cantidad);
       }, 0);
     },
     subtotal() {
@@ -58,10 +57,17 @@ export default {
     }
   },
   methods: {
+    handleImageError(event) {
+      // Prevenir loop infinito: solo cambiar si no es ya el placeholder
+      if (!event.target.dataset.fallback) {
+        event.target.dataset.fallback = 'true';
+        event.target.src = '/placeholder_product.jpg';
+      }
+    },
     async cargarDatosUsuario() {
       try {
         const token = localStorage.getItem('access_token');
-        const response = await axios.get(`${API_BASE_URL}/usuarios/perfil`, {
+        const response = await apiClient.get('/usuarios/perfil', {
           headers: { Authorization: `Bearer ${token}` }
         });
         
@@ -90,25 +96,30 @@ export default {
     guardarCarrito() {
       localStorage.setItem("carrito", JSON.stringify(this.productosCarrito));
     },
-    calcularSubtotal(item) {
-      return (parseFloat(item.precio) * item.cantidad).toFixed(2);
+    formatPrice(price) {
+      const value = Number(price);
+      if (Number.isNaN(value)) return '0.00';
+      return value.toFixed(2);
     },
-    aumentarCantidad(id) {
-      const producto = this.productosCarrito.find((p) => p.id === id);
+    calcularSubtotal(item) {
+      return (parseFloat(item.costoTotal) * item.cantidad).toFixed(2);
+    },
+    aumentarCantidad(codigo) {
+      const producto = this.productosCarrito.find((p) => p.codigo === codigo);
       if (producto) {
         producto.cantidad++;
         this.guardarCarrito();
       }
     },
-    disminuirCantidad(id) {
-      const producto = this.productosCarrito.find((p) => p.id === id);
+    disminuirCantidad(codigo) {
+      const producto = this.productosCarrito.find((p) => p.codigo === codigo);
       if (producto && producto.cantidad > 1) {
         producto.cantidad--;
         this.guardarCarrito();
       }
     },
-    eliminarProducto(id) {
-      this.productosCarrito = this.productosCarrito.filter((p) => p.id !== id);
+    eliminarProducto(codigo) {
+      this.productosCarrito = this.productosCarrito.filter((p) => p.codigo !== codigo);
       this.guardarCarrito();
     },
     vaciarCarrito() {
@@ -119,7 +130,7 @@ export default {
     },
     procederCompra() {
       if (!this.isAuthenticated) {
-        alert("Debes iniciar sesión para continuar con la compra");
+        this.$store.dispatch('mostrarToast', { mensaje: 'Debes iniciar sesión para continuar con la compra', tipo: 'warning' });
         this.$router.push("/login");
       } else {
         this.mostrarCheckout = true;
@@ -129,7 +140,7 @@ export default {
     async finalizarCompra() {
       // Validar datos
       if (!this.datosEnvio.nombre_cliente || !this.datosEnvio.email_cliente || !this.datosEnvio.direccion_envio) {
-        alert('Por favor completa todos los campos requeridos');
+        this.$store.dispatch('mostrarToast', { mensaje: 'Por favor completa todos los campos requeridos', tipo: 'warning' });
         return;
       }
 
@@ -139,8 +150,9 @@ export default {
         const token = localStorage.getItem('access_token');
         
         // Preparar items para el backend
+        // Asegurar que productId sea un número entero
         const items = this.productosCarrito.map(producto => ({
-          productId: parseInt(producto.id),
+          productId: parseInt(producto.codigo, 10),
           cantidad: producto.cantidad
         }));
 
@@ -155,8 +167,7 @@ export default {
           observaciones: 'Pedido pendiente de coordinación con vendedor' // Nota automática
         };
 
-        const response = await axios.post(
-          `${API_BASE_URL}/ordenes`,
+        const response = await apiClient.post('/ordenes',
           orderData,
           {
             headers: { Authorization: `Bearer ${token}` }
@@ -164,23 +175,11 @@ export default {
         );
 
         // Éxito
-        const mensajeExito = `
-¡Pedido enviado exitosamente!
-
-📦 Código de Pedido: ${response.data.codigo}
-💰 Total: $${response.data.total.toFixed(2)}
-
-👤 Un vendedor se pondrá en contacto contigo pronto para:
-   • Coordinar el método de pago
-   • Confirmar la dirección de entrega
-   • Responder tus preguntas
-
-📧 Recibirás un email de confirmación en breve.
-
-¡Gracias por tu preferencia!
-        `;
-        
-        alert(mensajeExito);
+        this.$store.dispatch('mostrarToast', {
+          mensaje: `¡Pedido #${response.data.codigo} enviado exitosamente!\nTotal: $${response.data.total.toFixed(2)}\nUn vendedor se pondrá en contacto contigo pronto.`,
+          tipo: 'success',
+          duracion: 6000,
+        });
         
         // Limpiar carrito
         this.productosCarrito = [];
@@ -192,7 +191,7 @@ export default {
 
       } catch (error) {
         console.error('Error al crear orden:', error);
-        alert('Error al procesar la orden: ' + (error.response?.data?.message || error.message));
+        this.$store.dispatch('mostrarToast', { mensaje: 'Error al procesar la orden: ' + (error.response?.data?.message || error.message), tipo: 'error' });
       } finally {
         this.procesandoPago = false;
       }

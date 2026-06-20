@@ -1,4 +1,4 @@
-import axios from 'axios';
+import apiClient from '@/services/api';
 
 export default {
   name: 'PanelTecnicos',
@@ -53,13 +53,7 @@ export default {
       this.cargando = true;
       this.error = null;
       try {
-        const token = localStorage.getItem('access_token');
-        const response = await axios.get(
-          `${process.env.VUE_APP_API_URL || 'https://backend-chpc-production.up.railway.app/api'}/work-orders`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        const response = await apiClient.get('/work-orders');
         this.ordenes = response.data;
       } catch (err) {
         console.error('Error al cargar órdenes de trabajo:', err);
@@ -70,21 +64,17 @@ export default {
     },
     async asignarOrden(ordenId) {
       try {
-        const token = localStorage.getItem('access_token');
-        await axios.post(
-          `${process.env.VUE_APP_API_URL || 'https://backend-chpc-production.up.railway.app/api'}/work-orders/${ordenId}/asignar`,
+        await apiClient.post(
+          `/work-orders/${ordenId}/asignar`,
           {
             tecnico_nombre: this.usuarioNombre,
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
           }
         );
         await this.cargarOrdenes();
         this.$toast?.success('Orden asignada exitosamente');
       } catch (err) {
         console.error('Error al asignar orden:', err);
-        alert(err.response?.data?.message || 'Error al asignar la orden');
+        this.$store.dispatch('mostrarToast', { mensaje: err.response?.data?.message || 'Error al asignar la orden', tipo: 'error' });
       }
     },
     async desasignarOrden(ordenId) {
@@ -92,37 +82,27 @@ export default {
         return;
       }
       try {
-        const token = localStorage.getItem('access_token');
-        await axios.delete(
-          `${process.env.VUE_APP_API_URL || 'https://backend-chpc-production.up.railway.app/api'}/work-orders/${ordenId}/desasignar`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        await apiClient.delete(`/work-orders/${ordenId}/desasignar`);
         await this.cargarOrdenes();
         this.$toast?.success('Orden liberada exitosamente');
       } catch (err) {
         console.error('Error al desasignar orden:', err);
-        alert(err.response?.data?.message || 'Error al liberar la orden');
+        this.$store.dispatch('mostrarToast', { mensaje: err.response?.data?.message || 'Error al liberar la orden', tipo: 'error' });
       }
     },
     async cambiarEstado(ordenId, nuevoEstado) {
       try {
-        const token = localStorage.getItem('access_token');
-        await axios.patch(
-            `${process.env.VUE_APP_API_URL || 'https://backend-chpc-production.up.railway.app/api'}/work-orders/${ordenId}/estado`,
+        await apiClient.patch(
+          `/work-orders/${ordenId}/estado`,
           {
             estado: nuevoEstado,
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
           }
         );
         await this.cargarOrdenes();
         this.$toast?.success('Estado actualizado exitosamente');
       } catch (err) {
         console.error('Error al cambiar estado:', err);
-        alert(err.response?.data?.message || 'Error al cambiar el estado');
+        this.$store.dispatch('mostrarToast', { mensaje: err.response?.data?.message || 'Error al cambiar el estado', tipo: 'error' });
       }
     },
     obtenerTextoEstado(estado) {
@@ -157,13 +137,7 @@ export default {
 
       // Si no está en localStorage, cargar desde la API
       try {
-        const token = localStorage.getItem('access_token');
-        const response = await axios.get(
-          `${process.env.VUE_APP_API_URL || 'https://backend-chpc-production.up.railway.app/api'}/usuarios/perfil`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        const response = await apiClient.get('/usuarios/perfil');
         
         const usuario = response.data;
         this.usuarioId = usuario.id;

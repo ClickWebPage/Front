@@ -1,11 +1,12 @@
-import axios from 'axios';
-import { API_BASE_URL } from '@/config/api';
+import apiClient from '@/services/api';
+import { getImageUrl } from '@/config/api';
 
 export default {
   name: 'AdminProductos',
   data() {
     return {
       productos: [],
+      productosFiltrados: [],
       imagenes: [],
       cargando: true,
       cargandoImagenes: false,
@@ -19,53 +20,293 @@ export default {
       archivoSeleccionado: null,
       imagenPrincipal: false,
       formProducto: this.getEmptyForm(),
+      // Filtros
+      filtros: {
+        busqueda: '',
+        tipoBusqueda: 'todos',
+        marca: '',
+        medida: '',
+        stock: '',
+      },
+      // Opciones disponibles para filtros
+      marcasDisponibles: [],
+      medidasDisponibles: [],
+      // Paginación
+      paginaActual: 1,
+      productosPorPagina: 20,
+      paginaInput: null,
     };
+  },
+  computed: {
+    placeholderBusqueda() {
+      const placeholders = {
+        todos: 'Nombre, código o marca...',
+        nombre: 'Buscar por nombre...',
+        marca: 'Buscar por marca...',
+        codigo: 'Buscar por código...',
+      };
+      return placeholders[this.filtros.tipoBusqueda] || 'Buscar...';
+    },
+    totalPaginas() {
+      return Math.ceil(this.productosFiltrados.length / this.productosPorPagina);
+    },
+    productosPaginados() {
+      const inicio = (this.paginaActual - 1) * this.productosPorPagina;
+      const fin = inicio + this.productosPorPagina;
+      return this.productosFiltrados.slice(inicio, fin);
+    },
+    indiceInicio() {
+      return (this.paginaActual - 1) * this.productosPorPagina + 1;
+    },
+    indiceFin() {
+      return Math.min(this.paginaActual * this.productosPorPagina, this.productosFiltrados.length);
+    },
+    paginasVisibles() {
+      const total = this.totalPaginas;
+      const actual = this.paginaActual;
+      const paginas = [];
+
+      // Si hay 7 o menos páginas, mostrar todas
+      if (total <= 7) {
+        for (let i = 1; i <= total; i++) {
+          paginas.push(i);
+        }
+        return paginas;
+      }
+
+      // Siempre mostrar primera página
+      paginas.push(1);
+
+      // Calcular rango alrededor de la página actual
+      let inicio = Math.max(2, actual - 1);
+      let fin = Math.min(total - 1, actual + 1);
+
+      // Ajustar si estamos cerca del inicio
+      if (actual <= 3) {
+        fin = 5;
+      }
+
+      // Ajustar si estamos cerca del final
+      if (actual >= total - 2) {
+        inicio = total - 4;
+      }
+
+      // Agregar puntos suspensivos al inicio si es necesario
+      if (inicio > 2) {
+        paginas.push('...');
+      }
+
+      // Agregar páginas del rango
+      for (let i = inicio; i <= fin; i++) {
+        if (i > 1 && i < total) {
+          paginas.push(i);
+        }
+      }
+
+      // Agregar puntos suspensivos al final si es necesario
+      if (fin < total - 1) {
+        paginas.push('...');
+      }
+
+      // Siempre mostrar última página
+      if (total > 1) {
+        paginas.push(total);
+      }
+
+      return paginas;
+    },
   },
   async mounted() {
     await this.cargarProductos();
   },
   methods: {
+    handleImageError(event) {
+      // Prevenir loop infinito: solo cambiar si no es ya el placeholder
+      if (!event.target.dataset.fallback) {
+        event.target.dataset.fallback = 'true';
+        event.target.src = '/placeholder_product.jpg';
+      }
+    },
+    
     getEmptyForm() {
       return {
-        nombre_producto: '',
-        descripcion: '',
-        precio: 0,
-        stock: 0,
+        codigo: '',
+        producto: '',
         marca: '',
-        color: '',
-        categoria: '',
-        subcategoria: '',
-        modelo: '',
-        sku: '',
-        especificaciones: '',
+        medida: '',
+        bodega: '',
         garantia: '',
-        imagen_url: '/placeholder.jpg', // Imagen por defecto
-        destacado: false,
-        activo: true,
+        costoTotal: 0,
+        existenciaTotal: '0',
       };
     },
 
     async cargarProductos() {
       try {
         this.cargando = true;
-        const token = localStorage.getItem('access_token');
-        const response = await axios.get(`${API_BASE_URL}/tienda/productos`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        // Mostrar todos los productos, incluso inactivos
-        this.productos = response.data;
+        // El interceptor de apiClient ya agrega el token automáticamente
+        // y manejará errores 401 (incluyendo refresh token y redirección al login)
+        const response = await apiClient.get('/tienda/productos/admin/todos');
+        // La API devuelve { data: [...], total, page, limit, totalPages }
+        // Mostrar todos los productos, incluso sin stock o sin precio
+        const productosArray = response.data.data || response.data;
+        
+        // Procesar URLs de imágenes para que funcionen correctamente
+        this.productos = productosArray.map(producto => ({
+          ...producto,
+          imagen_url: getImageUrl(producto.imagen_url)
+        }));
+        
+        this.productosFiltrados = [...this.productos];
+        this.extraerOpcionesFiltros();
       } catch (error) {
         console.error('Error al cargar productos:', error);
-        alert('Error al cargar productos');
+        // Solo mostrar mensaje si no es error 401 (el interceptor ya lo maneja)
+        if (error.response?.status !== 401) {
+          this.$store.dispatch('mostrarToast', { mensaje: 'Error al cargar productos: ' + (error.response?.data?.message || error.message), tipo: 'error' });
+        }
       } finally {
         this.cargando = false;
+      }
+    },
+
+    extraerOpcionesFiltros() {
+      // Extraer marcas únicas
+      const marcasSet = new Set();
+      this.productos.forEach(p => {
+        if (p.marca) marcasSet.add(p.marca);
+      });
+      this.marcasDisponibles = Array.from(marcasSet).sort();
+
+      // Extraer medidas únicas
+      const medidasSet = new Set();
+      this.productos.forEach(p => {
+        if (p.medida) medidasSet.add(p.medida);
+      });
+      this.medidasDisponibles = Array.from(medidasSet).sort();
+    },
+
+    aplicarFiltros() {
+      let resultado = [...this.productos];
+
+      // Filtro por búsqueda de texto
+      if (this.filtros.busqueda) {
+        const busqueda = this.filtros.busqueda.toLowerCase();
+        switch (this.filtros.tipoBusqueda) {
+          case 'nombre':
+            resultado = resultado.filter(p =>
+              p.producto && p.producto.toLowerCase().includes(busqueda)
+            );
+            break;
+          case 'marca':
+            resultado = resultado.filter(p =>
+              p.marca && p.marca.toLowerCase().includes(busqueda)
+            );
+            break;
+          case 'codigo':
+            resultado = resultado.filter(p =>
+              p.codigo && p.codigo.toString().toLowerCase().includes(busqueda)
+            );
+            break;
+          default: // 'todos'
+            resultado = resultado.filter(p =>
+              (p.producto && p.producto.toLowerCase().includes(busqueda)) ||
+              (p.codigo && p.codigo.toString().toLowerCase().includes(busqueda)) ||
+              (p.marca && p.marca.toLowerCase().includes(busqueda))
+            );
+        }
+      }
+
+      // Filtro por marca
+      if (this.filtros.marca) {
+        resultado = resultado.filter(p => p.marca === this.filtros.marca);
+      }
+
+      // Filtro por medida
+      if (this.filtros.medida) {
+        resultado = resultado.filter(p => p.medida === this.filtros.medida);
+      }
+
+      // Filtro por stock
+      if (this.filtros.stock) {
+        resultado = resultado.filter(p => {
+          const stock = parseInt(p.existenciaTotal) || 0;
+          switch (this.filtros.stock) {
+            case 'con-stock':
+              return stock > 0;
+            case 'sin-stock':
+              return stock === 0;
+            case 'bajo-stock':
+              return stock > 0 && stock < 10;
+            default:
+              return true;
+          }
+        });
+      }
+
+      this.productosFiltrados = resultado;
+      // Resetear a la primera página al aplicar filtros
+      this.paginaActual = 1;
+    },
+
+    limpiarFiltros() {
+      this.filtros = {
+        busqueda: '',
+        tipoBusqueda: 'todos',
+        marca: '',
+        medida: '',
+        stock: '',
+      };
+      this.productosFiltrados = [...this.productos];
+      this.paginaActual = 1;
+    },
+
+    irAPagina(pagina) {
+      if (pagina >= 1 && pagina <= this.totalPaginas) {
+        this.paginaActual = pagina;
+        // Scroll al inicio de la lista de productos
+        const element = document.querySelector('.productos-grid');
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    },
+
+    paginaSiguiente() {
+      if (this.paginaActual < this.totalPaginas) {
+        this.irAPagina(this.paginaActual + 1);
+      }
+    },
+
+    paginaAnterior() {
+      if (this.paginaActual > 1) {
+        this.irAPagina(this.paginaActual - 1);
+      }
+    },
+
+    irAPaginaInput() {
+      if (this.paginaInput && this.paginaInput >= 1 && this.paginaInput <= this.totalPaginas) {
+        this.irAPagina(this.paginaInput);
+        this.paginaInput = null; // Limpiar el input después de navegar
+      } else if (this.paginaInput) {
+        this.$store.dispatch('mostrarToast', { mensaje: `Por favor ingresa un número entre 1 y ${this.totalPaginas}`, tipo: 'warning' });
       }
     },
 
     editarProducto(producto) {
       this.editando = true;
       this.productoActual = producto;
-      this.formProducto = { ...producto };
+      // Solo copiar los campos editables del formulario
+      this.formProducto = {
+        codigo: producto.codigo,
+        producto: producto.producto || '',
+        marca: producto.marca || '',
+        medida: producto.medida || '',
+        bodega: producto.bodega || '',
+        garantia: producto.garantia || '',
+        costoTotal: producto.costoTotal || 0,
+        existenciaTotal: producto.existenciaTotal || '0',
+      };
       this.showEditModal = true;
     },
 
@@ -75,27 +316,41 @@ export default {
         const token = localStorage.getItem('access_token');
         const headers = { Authorization: `Bearer ${token}` };
 
+        // Preparar solo los campos válidos para el backend
+        const datosProducto = {
+          producto: this.formProducto.producto,
+          marca: this.formProducto.marca,
+          medida: this.formProducto.medida,
+          bodega: this.formProducto.bodega,
+          garantia: this.formProducto.garantia,
+          costoTotal: parseFloat(this.formProducto.costoTotal) || 0,
+          existenciaTotal: this.formProducto.existenciaTotal?.toString() || '0',
+        };
+
         if (this.editando) {
           // Actualizar producto existente
-          await axios.put(
-            `${API_BASE_URL}/tienda/productos/${this.productoActual.id}`,
-            this.formProducto,
+          await apiClient.put(
+            `/tienda/productos/${this.productoActual.codigo}`,
+            datosProducto,
             { headers }
           );
-          alert('Producto actualizado correctamente');
+          this.$store.dispatch('mostrarToast', { mensaje: 'Producto actualizado correctamente', tipo: 'success' });
+          await this.registrarLog('productos', 'UPDATE', `Producto "${this.formProducto.producto}" actualizado (código ${this.productoActual.codigo})`, { codigo: this.productoActual.codigo, ...datosProducto });
         } else {
           // Crear nuevo producto
-          await axios.post(`${API_BASE_URL}/tienda/productos`, this.formProducto, {
+          await apiClient.post('/tienda/productos', this.formProducto, {
             headers,
           });
-          alert('Producto creado correctamente');
+          this.$store.dispatch('mostrarToast', { mensaje: 'Producto creado correctamente', tipo: 'success' });
+          await this.registrarLog('productos', 'CREATE', `Nuevo producto "${this.formProducto.producto}" creado`, { ...this.formProducto });
         }
 
         await this.cargarProductos();
         this.cerrarEditModal();
       } catch (error) {
         console.error('Error al guardar producto:', error);
-        alert('Error al guardar producto: ' + (error.response?.data?.message || error.message));
+        await this.registrarLog('productos', this.editando ? 'UPDATE' : 'CREATE', 'Error al guardar producto', null, false, error.response?.data?.message || error.message);
+        this.$store.dispatch('mostrarToast', { mensaje: 'Error al guardar producto: ' + (error.response?.data?.message || error.message), tipo: 'error' });
       } finally {
         this.guardando = false;
       }
@@ -107,33 +362,35 @@ export default {
 
       try {
         const token = localStorage.getItem('access_token');
-        await axios.put(
-          `${API_BASE_URL}/tienda/productos/${producto.id}`,
+        await apiClient.put(
+          `/tienda/productos/${producto.id}`,
           { activo: !producto.activo },
           { headers: { Authorization: `Bearer ${token}` } }
         );
         await this.cargarProductos();
-        alert(`Producto ${accion === 'desactivar' ? 'desactivado' : 'activado'} correctamente`);
+        this.$store.dispatch('mostrarToast', { mensaje: `Producto ${accion === 'desactivar' ? 'desactivado' : 'activado'} correctamente`, tipo: 'success' });
+        await this.registrarLog('productos', 'UPDATE', `Producto "${producto.producto}" ${accion === 'desactivar' ? 'desactivado' : 'activado'} (código ${producto.codigo})`, { codigo: producto.codigo, activo: !producto.activo });
       } catch (error) {
         console.error('Error al cambiar estado:', error);
-        alert('Error al cambiar estado del producto');
+        this.$store.dispatch('mostrarToast', { mensaje: 'Error al cambiar estado del producto', tipo: 'error' });
       }
     },
 
     async gestionarImagenes(producto) {
       this.productoActual = producto;
       this.showImagenesModal = true;
-      await this.cargarImagenes(producto.id);
+      await this.cargarImagenes(producto.codigo);
     },
 
-    async cargarImagenes(productoId) {
+    async cargarImagenes(productoCodigo) {
       try {
         this.cargandoImagenes = true;
-        const token = localStorage.getItem('access_token');
-        const response = await axios.get(`${API_BASE_URL}/images/producto/${productoId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        this.imagenes = response.data;
+        const response = await apiClient.get(`/images/producto/${productoCodigo}`);
+        // Procesar URLs de imágenes
+        this.imagenes = response.data.map(imagen => ({
+          ...imagen,
+          ruta_imagen: getImageUrl(imagen.ruta_imagen)
+        }));
       } catch (error) {
         console.error('Error al cargar imágenes:', error);
         this.imagenes = [];
@@ -148,14 +405,14 @@ export default {
         // Validar tipo
         const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
         if (!allowedTypes.includes(file.type)) {
-          alert('Solo se permiten archivos JPG, PNG o WEBP');
+          this.$store.dispatch('mostrarToast', { mensaje: 'Solo se permiten archivos JPG, PNG o WEBP', tipo: 'warning' });
           return;
         }
 
         // Validar tamaño (5MB)
         const maxSize = 5 * 1024 * 1024;
         if (file.size > maxSize) {
-          alert('El archivo no debe superar 5MB');
+          this.$store.dispatch('mostrarToast', { mensaje: 'El archivo no debe superar 5MB', tipo: 'warning' });
           return;
         }
 
@@ -168,49 +425,56 @@ export default {
 
       try {
         this.subiendoImagen = true;
-        const token = localStorage.getItem('access_token');
         const formData = new FormData();
+        
+        // Agregar archivo - probar con diferentes nombres de campo comunes
         formData.append('file', this.archivoSeleccionado);
-        formData.append('es_principal', this.imagenPrincipal);
-        formData.append('orden', this.imagenes.length);
+        formData.append('es_principal', this.imagenPrincipal ? 'true' : 'false');
+        formData.append('orden', (this.imagenes.length + 1).toString());
+        
+        // Debug: mostrar contenido del FormData
+        console.log('📦 FormData contenido:');
+        for (let [key, value] of formData.entries()) {
+          console.log(`   ${key}:`, value);
+        }
+        console.log('📦 Producto Codigo:', this.productoActual.codigo);
 
-        await axios.post(
-          `${API_BASE_URL}/images/upload/${this.productoActual.id}`,
-          formData,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'multipart/form-data',
-            },
-          }
+        const response = await apiClient.post(`/images/upload/${this.productoActual.codigo}`,
+          formData
         );
+        
+        console.log('✅ Respuesta:', response.data);
 
-        alert('Imagen subida correctamente');
+        this.$store.dispatch('mostrarToast', { mensaje: 'Imagen subida correctamente', tipo: 'success' });
+        await this.registrarLog('productos', 'UPLOAD', `Imagen subida para producto "${this.productoActual.producto}" (código ${this.productoActual.codigo})`, { codigo: this.productoActual.codigo, es_principal: this.imagenPrincipal, archivo: this.archivoSeleccionado?.name });
         this.archivoSeleccionado = null;
         this.imagenPrincipal = false;
         this.$refs.fileInput.value = '';
-        await this.cargarImagenes(this.productoActual.id);
+        await this.cargarImagenes(this.productoActual.codigo);
       } catch (error) {
         console.error('Error al subir imagen:', error);
-        alert('Error al subir imagen: ' + (error.response?.data?.message || error.message));
+        console.error('Respuesta del servidor:', error.response?.data);
+        await this.registrarLog('productos', 'UPLOAD', `Error al subir imagen para producto código ${this.productoActual?.codigo}`, null, false, error.response?.data?.message || error.message);
+        this.$store.dispatch('mostrarToast', { mensaje: 'Error al subir imagen: ' + (error.response?.data?.message || error.response?.data?.detail || error.message), tipo: 'error' });
       } finally {
         this.subiendoImagen = false;
       }
     },
 
-    async marcarPrincipal(imagenId) {
+    async marcarPrincipal(imagen) {
       try {
         const token = localStorage.getItem('access_token');
-        await axios.put(
-          `${API_BASE_URL}/images/${imagenId}/principal`,
+        await apiClient.put(
+          `/images/${imagen.id}/principal`,
           {},
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        await this.cargarImagenes(this.productoActual.id);
-        alert('Imagen marcada como principal');
+        await this.cargarImagenes(this.productoActual.codigo);
+        this.$store.dispatch('mostrarToast', { mensaje: 'Imagen marcada como principal', tipo: 'success' });
+        await this.registrarLog('productos', 'UPDATE', `Imagen ID ${imagen.id} marcada como principal en producto código ${this.productoActual.codigo}`, { imagen_id: imagen.id, codigo: this.productoActual.codigo });
       } catch (error) {
         console.error('Error al marcar imagen principal:', error);
-        alert('Error al marcar imagen como principal');
+        this.$store.dispatch('mostrarToast', { mensaje: 'Error al marcar imagen como principal', tipo: 'error' });
       }
     },
 
@@ -218,15 +482,46 @@ export default {
       if (!confirm('¿Está seguro de eliminar esta imagen?')) return;
 
       try {
-        const token = localStorage.getItem('access_token');
-        await axios.delete(`${API_BASE_URL}/images/${imagenId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        await this.cargarImagenes(this.productoActual.id);
-        alert('Imagen eliminada correctamente');
+        // imagenId es el ID directo que se pasa desde el template
+        await apiClient.delete(`/images/${imagenId}`);
+        await this.cargarImagenes(this.productoActual.codigo);
+        this.$store.dispatch('mostrarToast', { mensaje: 'Imagen eliminada correctamente', tipo: 'success' });
+        await this.registrarLog('productos', 'DELETE', `Imagen ID ${imagenId} eliminada del producto código ${this.productoActual.codigo}`, { imagen_id: imagenId, codigo: this.productoActual.codigo });
       } catch (error) {
         console.error('Error al eliminar imagen:', error);
-        alert('Error al eliminar imagen');
+        const errorMsg = error.response?.data?.message || 'Error desconocido';
+        this.$store.dispatch('mostrarToast', { mensaje: `Error al eliminar imagen: ${errorMsg}`, tipo: 'error' });
+      }
+    },
+
+    // ========== AUDIT LOG ==========
+    async registrarLog(modulo, accion, descripcion, detalle = null, exitoso = true, error_detalle = null) {
+      try {
+        let username = 'desconocido';
+        let nombre   = '';
+        let rol      = localStorage.getItem('user_rol') || 'desconocido';
+        const usuarioJson = localStorage.getItem('usuario');
+        if (usuarioJson) {
+          try {
+            const u = JSON.parse(usuarioJson);
+            username = u.username || 'desconocido';
+            nombre   = `${u.nombre || ''} ${u.apellido || ''}`.trim();
+            rol      = u.rol || rol;
+          } catch { /* ignorar */ }
+        }
+        await apiClient.post('/audit-log', {
+          usuario_username: username,
+          usuario_nombre:   nombre,
+          usuario_rol:      rol,
+          modulo,
+          accion,
+          descripcion,
+          detalle,
+          exitoso,
+          error_detalle,
+        });
+      } catch (e) {
+        console.warn('No se pudo registrar el log de auditoría:', e?.response?.data || e.message);
       }
     },
 

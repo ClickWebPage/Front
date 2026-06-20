@@ -17,19 +17,26 @@
           <div class="banner-container">
             <CarouselBanner :banners="banners" />
           </div>
-          <!-- Contenedor de Video Destacado -->
+          <!-- Contenedor de Video / Playlist -->
           <div class="video-featured-container">
             <div class="video-wrapper">
-              <!-- Puedes cambiar este iframe por el video que desees -->
               <iframe
-                :src="videoDestacado"
+                :key="currentVideoIndex"
+                :src="currentVideoEmbedUrl"
                 frameborder="0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowfullscreen
                 title="Video destacado"
               ></iframe>
             </div>
-            <div class="video-info">
+            <!-- Controles de playlist (solo visible para admin/vendedor con más de 1 video) -->
+            <div v-if="videoPlaylist.length > 1 && (userRole === 'administrador' || userRole === 'vendedor')" class="video-playlist-controls">
+              <button class="vp-btn" @click="prevVideo" title="Video anterior">&#8249;</button>
+              <div class="vp-info">
+                <span class="vp-titulo">{{ currentVideo?.titulo }}</span>
+                <span class="vp-pager">{{ currentVideoIndex + 1 }} / {{ videoPlaylist.length }}</span>
+              </div>
+              <button class="vp-btn" @click="nextVideo" title="Siguiente video">&#8250;</button>
             </div>
           </div>
         
@@ -83,24 +90,27 @@
 <div class="product-grid">
   <div
     v-for="producto in productosMostrados"
-    :key="producto.id"
+    :key="producto.codigo"
     class="product-card"
-    @click="verDetalle(producto.id)"
+    @click="verDetalle(producto.codigo)"
   >
-    <!-- Badge de promoción -->
-    <div v-if="producto.tienePromocion" class="promo-badge">
-      -{{ producto.promocion.porcentaje }}%
-    </div>
-    <!-- Contenedor de imagen -->
-    <div class="product-image-wrapper">
-      <img
-        :src="producto.imagen_url || 'ruta-imagen-default.png'"
-        :alt="producto.nombre_producto"
-      />
-    </div>
+    <!-- Carrusel de imágenes del producto -->
+    <ProductImageCarousel
+      :images="getProductImages(producto)"
+      :alt-text="producto.producto"
+      :auto-play="true"
+      :auto-play-interval="3000"
+      @click="verDetalle(producto.codigo)"
+    >
+      <template #badge>
+        <div v-if="producto.tienePromocion" class="promo-badge">
+          -{{ producto.promocion.porcentaje }}%
+        </div>
+      </template>
+    </ProductImageCarousel>
     <!-- Información del producto -->
     <div class="product-info">
-      <h3 class="product-title">{{ producto.nombre_producto }}</h3>
+      <h3 class="product-title">{{ producto.producto }}</h3>
       <!-- Precio -->
       <div v-if="isAuthenticated" class="product-price">
         <div v-if="producto.tienePromocion">
@@ -108,7 +118,7 @@
           <span class="price-current">${{ producto.promocion.precioConDescuento }}</span>
         </div>
         <div v-else>
-          <span class="price-current">${{ producto.precio }}</span>
+          <span class="price-current">${{ formatPrice(producto.costoTotal) }}</span>
         </div>
       </div>
       <div v-else class="product-price">
@@ -119,9 +129,9 @@
         v-if="isAuthenticated"
         @click.stop="agregarAlCarrito(producto)" 
         class="btn-add-cart"
-        :disabled="producto.stock <= 0"
+        :disabled="parseInt(producto.existenciaTotal) <= 0"
       >
-        <span v-if="producto.stock > 0">AGREGAR AL CARRITO</span>
+        <span v-if="parseInt(producto.existenciaTotal) > 0">AGREGAR AL CARRITO</span>
         <span v-else>SIN STOCK</span>
       </button>
       <button 

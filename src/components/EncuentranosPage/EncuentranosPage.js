@@ -13,10 +13,10 @@ export default {
       isAuthenticated: false,
       
       // Información de contacto - PERSONALIZA ESTOS DATOS
-      direccion: "Calle 12 Avenida 20 Esquina, Manta, Ecuador",
-      horario: "Lunes a Viernes: 8:00 AM - 6:00 PM\nSábados: 9:00 AM - 1:00 PM",
-      telefono: "+593 995924867",
-      email: "clickhereventas4@gmail.com",
+      direccion: "Calle 12 Avenida 20 Esquina, Manta, Ecuador 130207",
+      horario: "Lunes a Sabado: 8:00 AM - 6:00 PM",
+      telefono: "+593 995924867 / 052628112",
+      email: "clickhereventas4@gmail.com / clickhere.pc@gmail.com",
       
       // CONFIGURA TU ENLACE DE GOOGLE MAPS AQUÍ
       // Para obtener el enlace:

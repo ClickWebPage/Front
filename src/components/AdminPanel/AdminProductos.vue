@@ -7,30 +7,103 @@
       </button>
     </div>
 
+    <!-- Barra de filtros -->
+    <div class="filtros-bar">
+      <div class="filtro-grupo filtro-busqueda-grupo">
+        <label>Buscar:</label>
+        <div class="busqueda-combinada">
+          <select
+            v-model="filtros.tipoBusqueda"
+            @change="aplicarFiltros"
+            class="filtro-select filtro-tipo-busqueda"
+            title="Tipo de búsqueda"
+          >
+            <option value="todos">Todos</option>
+            <option value="nombre">Nombre</option>
+            <option value="marca">Marca</option>
+            <option value="codigo">Código</option>
+          </select>
+          <input
+            type="text"
+            v-model="filtros.busqueda"
+            :placeholder="placeholderBusqueda"
+            @input="aplicarFiltros"
+            class="filtro-input"
+          />
+        </div>
+      </div>
+
+      <div class="filtro-grupo">
+        <label>Marca:</label>
+        <select v-model="filtros.marca" @change="aplicarFiltros" class="filtro-select">
+          <option value="">Todas</option>
+          <option v-for="marca in marcasDisponibles" :key="marca" :value="marca">
+            {{ marca }}
+          </option>
+        </select>
+      </div>
+
+      <div class="filtro-grupo">
+        <label>Medida:</label>
+        <select v-model="filtros.medida" @change="aplicarFiltros" class="filtro-select">
+          <option value="">Todas</option>
+          <option v-for="medida in medidasDisponibles" :key="medida" :value="medida">
+            {{ medida }}
+          </option>
+        </select>
+      </div>
+
+      <div class="filtro-grupo">
+        <label>Stock:</label>
+        <select v-model="filtros.stock" @change="aplicarFiltros" class="filtro-select">
+          <option value="">Todos</option>
+          <option value="con-stock">Con stock</option>
+          <option value="sin-stock">Sin stock</option>
+          <option value="bajo-stock">Bajo stock (&lt;10)</option>
+        </select>
+      </div>
+
+      <button @click="limpiarFiltros" class="btn btn-secondary btn-sm">
+        Limpiar filtros
+      </button>
+    </div>
+
+    <div class="resultados-info">
+      <span>Mostrando {{ indiceInicio }}-{{ indiceFin }} de {{ productosFiltrados.length }} productos</span>
+      <span v-if="productosFiltrados.length !== productos.length"> ({{ productos.length }} total)</span>
+    </div>
+
     <!-- Lista de productos -->
-    <div v-if="cargando" class="loading">⏳ Cargando productos...</div>
+    <div v-if="cargando" class="loading">Cargando productos...</div>
 
     <div v-else class="productos-grid">
       <div
-        v-for="producto in productos"
-        :key="producto.id"
+        v-for="producto in productosPaginados"
+        :key="producto.codigo"
         class="producto-card"
-        :class="{ inactivo: !producto.activo }"
       >
         <div class="producto-imagen">
           <img
-            :src="producto.imagen_url || '/placeholder.jpg'"
-            :alt="producto.nombre_producto"
+            :src="producto.imagen_url || '/placeholder_product.jpg'"
+            :alt="producto.producto"
+            @error="handleImageError"
+            loading="lazy"
           />
-          <span v-if="!producto.activo" class="badge-inactivo">Inactivo</span>
         </div>
 
         <div class="producto-info">
-          <h3>{{ producto.nombre_producto }}</h3>
-          <p class="categoria">{{ producto.categoria }} - {{ producto.subcategoria }}</p>
-          <p class="precio">${{ producto.precio }}</p>
+          <h3>{{ producto.producto }}</h3>
+          <p class="categoria">{{ producto.marca }} - {{ producto.medida }}</p>
+          <p class="precio">${{ producto.costoTotal }}</p>
           <p class="stock">
-            Stock: <strong>{{ producto.stock }}</strong>
+            Stock: <strong>{{ producto.existenciaTotal }}</strong>
+          </p>
+          <p class="fecha-modificacion" :class="{ 'sin-fecha': !producto.precioUnitario?.modificado }">
+            <span class="fecha-icono">🗓</span>
+            <span v-if="producto.precioUnitario?.modificado">
+              Precio actualizado: <strong>{{ producto.precioUnitario.modificado }}</strong>
+            </span>
+            <span v-else class="texto-sin-fecha">Sin fecha de modificación</span>
           </p>
         </div>
 
@@ -45,12 +118,56 @@
           >
             🖼️
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controles de Paginación -->
+    <div v-if="!cargando && productosFiltrados.length > 0" class="paginacion">
+      <button 
+        @click="paginaAnterior" 
+        :disabled="paginaActual === 1"
+        class="btn-paginacion"
+      >
+        ← Anterior
+      </button>
+
+      <div class="paginas-numeros">
+        <template v-for="(pagina, index) in paginasVisibles" :key="index">
           <button
-            @click="toggleActivo(producto)"
-            :class="['btn-icon', producto.activo ? 'btn-danger' : 'btn-success']"
-            :title="producto.activo ? 'Desactivar' : 'Activar'"
+            v-if="pagina !== '...'"
+            @click="irAPagina(pagina)"
+            :class="['btn-pagina', { activa: pagina === paginaActual }]"
           >
-            {{ producto.activo ? '🚫' : '✅' }}
+            {{ pagina }}
+          </button>
+          <span v-else class="pagina-ellipsis">...</span>
+        </template>
+      </div>
+
+      <button 
+        @click="paginaSiguiente" 
+        :disabled="paginaActual === totalPaginas"
+        class="btn-paginacion"
+      >
+        Siguiente →
+      </button>
+
+      <div class="info-pagina">
+        <span>Página {{ paginaActual }} de {{ totalPaginas }}</span>
+        <div class="ir-a-pagina">
+          <label>Ir a:</label>
+          <input
+            type="number"
+            v-model.number="paginaInput"
+            @keyup.enter="irAPaginaInput"
+            :min="1"
+            :max="totalPaginas"
+            placeholder="#"
+            class="pagina-input"
+          />
+          <button @click="irAPaginaInput" class="btn-ir" title="Ir a página">
+            →
           </button>
         </div>
       </div>
@@ -65,56 +182,34 @@
         </div>
 
         <form @submit.prevent="guardarProducto" class="producto-form">
+          <!-- Fecha de última modificación (solo al editar) -->
+          <div v-if="editando" class="form-info-row">
+            <span class="info-label">🗓 Última modificación de precio:</span>
+            <strong v-if="productoActual?.precioUnitario?.modificado" class="info-value">
+              {{ productoActual.precioUnitario.modificado }}
+            </strong>
+            <span v-else class="info-value sin-dato">Sin registro</span>
+          </div>
+
           <div class="form-row">
+            <div class="form-group">
+              <label>Código del Producto *</label>
+              <input
+                v-model="formProducto.codigo"
+                type="text"
+                required
+                placeholder="Código único"
+                :disabled="editando"
+              />
+            </div>
+
             <div class="form-group">
               <label>Nombre del Producto *</label>
               <input
-                v-model="formProducto.nombre_producto"
+                v-model="formProducto.producto"
                 type="text"
                 required
                 placeholder="Ej: Laptop ASUS ROG"
-              />
-            </div>
-
-            <div class="form-group">
-              <label>SKU</label>
-              <input
-                v-model="formProducto.sku"
-                type="text"
-                placeholder="Código único"
-              />
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>Descripción *</label>
-            <textarea
-              v-model="formProducto.descripcion"
-              rows="4"
-              required
-              placeholder="Descripción detallada del producto"
-            ></textarea>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label>Precio *</label>
-              <input
-                v-model.number="formProducto.precio"
-                type="number"
-                step="0.01"
-                min="0"
-                required
-              />
-            </div>
-
-            <div class="form-group">
-              <label>Stock *</label>
-              <input
-                v-model.number="formProducto.stock"
-                type="number"
-                min="0"
-                required
               />
             </div>
           </div>
@@ -126,35 +221,15 @@
             </div>
 
             <div class="form-group">
-              <label>Color</label>
-              <input v-model="formProducto.color" type="text" />
+              <label>Medida</label>
+              <input v-model="formProducto.medida" type="text" />
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label>Categoría</label>
-              <select v-model="formProducto.categoria">
-                <option value="">Seleccione...</option>
-                <option value="Laptops">Laptops</option>
-                <option value="Componentes">Componentes</option>
-                <option value="Perifericos">Periféricos</option>
-                <option value="Almacenamiento">Almacenamiento</option>
-                <option value="Redes">Redes</option>
-                <option value="Audio">Audio</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Subcategoría</label>
-              <input v-model="formProducto.subcategoria" type="text" />
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label>Modelo</label>
-              <input v-model="formProducto.modelo" type="text" />
+              <label>Almacén</label>
+              <input v-model="formProducto.bodega" type="text" />
             </div>
 
             <div class="form-group">
@@ -163,31 +238,27 @@
             </div>
           </div>
 
-          <div class="form-group">
-            <label>Especificaciones Técnicas</label>
-            <textarea
-              v-model="formProducto.especificaciones"
-              rows="3"
-              placeholder="Detalles técnicos del producto"
-            ></textarea>
-          </div>
-
           <div class="form-row">
-            <div class="form-group checkbox-group">
-              <label>
-                <input v-model="formProducto.destacado" type="checkbox" />
-                Producto Destacado
-              </label>
+            <div class="form-group">
+              <label>Costo Total *</label>
+              <input
+                v-model.number="formProducto.costoTotal"
+                type="number"
+                step="0.01"
+                min="0"
+                required
+              />
             </div>
 
-            <div class="form-group checkbox-group">
-              <label>
-                <input v-model="formProducto.activo" type="checkbox" />
-                Producto Activo
-              </label>
+            <div class="form-group">
+              <label>Existencia Total *</label>
+              <input
+                v-model="formProducto.existenciaTotal"
+                type="text"
+                required
+              />
             </div>
           </div>
-
           <div class="modal-actions">
             <button type="submit" class="btn btn-primary" :disabled="guardando">
               {{ guardando ? 'Guardando...' : 'Guardar Producto' }}
@@ -204,7 +275,7 @@
     <div v-if="showImagenesModal" class="modal-overlay" @click.self="cerrarImagenesModal">
       <div class="modal-content large">
         <div class="modal-header">
-          <h3>Imágenes de {{ productoActual?.nombre_producto }}</h3>
+          <h3>Imágenes de {{ productoActual?.producto }}</h3>
           <button class="btn-close" @click="cerrarImagenesModal">×</button>
         </div>
 

@@ -1,4 +1,12 @@
+/* ===== Layout Global ===== */
+.page-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
 .productos-por-categoria-container {
+  flex: 1;
   max-width: 1400px;
   margin: 0 auto;
   padding: 40px 20px;
@@ -62,18 +70,11 @@
   transform: translateY(-1px);
 }
 
-/* Layout con dos columnas */
+/* Layout con dos columnas: filtros izquierda, productos derecha */
 .content-layout {
   display: flex;
   gap: 30px;
   align-items: flex-start;
-  flex-direction: row;
-}
-
-.productos-section {
-  flex: 1;
-  min-width: 0;
-  order: 2;
 }
 
 /* Sidebar de filtros a la izquierda */
@@ -84,7 +85,11 @@
   top: 20px;
   max-height: calc(100vh - 100px);
   overflow-y: auto;
-  order: 1;
+}
+
+.productos-section {
+  flex: 1;
+  min-width: 0;
 }
 
 .filtros-container {
@@ -211,17 +216,19 @@
 
 .producto-card img {
   width: 100%;
-  height: 220px;
-  object-fit: cover;
-  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  height: 240px;
+  object-fit: contain;
+  padding: 20px;
+  background: #f8f8f8;
+  transition: transform 0.3s ease;
 }
 
 .producto-card:hover img {
-  transform: scale(1.1);
+  transform: scale(1.05);
 }
 
 .producto-info {
-  padding: 20px;
+  padding: 16px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -235,16 +242,29 @@
   border-radius: 15px;
   font-size: 12px;
   font-weight: 600;
-  margin-bottom: 10px;
+  margin-bottom: 4px;
   width: fit-content;
+}
+
+.codigo-tag {
+  display: block;
+  color: #999;
+  font-size: 0.72rem;
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
 }
 
 .producto-card h3 {
   color: #2c3e50;
-  font-size: 18px;
-  margin: 10px 0;
+  font-size: 15px;
+  margin: 0 0 12px 0;
   font-weight: 600;
   line-height: 1.4;
+  min-height: 42px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .producto-card .descripcion {
@@ -341,5 +361,36 @@
 
   .categoria-header h1 {
     font-size: 28px;
+  }
+}
+/* ================= Carrusel Styles ================= */
+.producto-card .product-image-carousel {
+  width: 100%;
+  height: 220px;
+}
+
+.producto-card .carousel-image-wrapper {
+  padding: 10px;
+  background: #f8f8f8;
+}
+
+.producto-card .carousel-image {
+  object-fit: cover;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.producto-card:hover .carousel-image {
+  transform: scale(1.1);
+}
+
+@media (max-width: 768px) {
+  .producto-card .product-image-carousel {
+    height: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  .producto-card .product-image-carousel {
+    height: 180px;
   }
 }

@@ -1,7 +1,7 @@
 import HeaderAnth from '../HeaderAnth/HeaderAnth.vue';
 import FooterAnth from '../FooterAnth/FooterAnth.vue';
-import axios from 'axios';
-import { API_BASE_URL } from '@/config/api';
+import apiClient from '@/services/api';
+import authService from '@/services/auth';
 
 export default {
   name: 'PerfilUsuario',
@@ -72,7 +72,7 @@ export default {
     async cargarDatosUsuario() {
       try {
         const token = localStorage.getItem('access_token');
-        const response = await axios.get(`${API_BASE_URL}/usuarios/perfil`, {
+        const response = await apiClient.get('/usuarios/perfil', {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -107,10 +107,40 @@ export default {
       this.mensaje = '';
     },
     
+    validarTelefono(telefono) {
+      if (!telefono || telefono.trim() === '') {
+        return true; // Teléfono es opcional
+      }
+      
+      const telefonoTrim = telefono.trim();
+      
+      // Validar longitud
+      if (telefonoTrim.length < 7 || telefonoTrim.length > 20) {
+        return 'El teléfono debe tener entre 7 y 20 caracteres';
+      }
+      
+      // Validar formato: solo números, espacios, +, -, ( )
+      if (!/^[0-9+\-\s()]+$/.test(telefonoTrim)) {
+        return 'El teléfono solo puede contener números, espacios y los caracteres: + - ( )';
+      }
+      
+      return true;
+    },
+
     async actualizarDatos() {
       try {
         this.guardando = true;
         this.mensaje = '';
+        
+        // Validar teléfono antes de enviar
+        if (this.formData.telefono) {
+          const validacionTelefono = this.validarTelefono(this.formData.telefono);
+          if (validacionTelefono !== true) {
+            this.mostrarMensaje('⚠️ ' + validacionTelefono, 'error');
+            this.guardando = false;
+            return;
+          }
+        }
         
         const token = localStorage.getItem('access_token');
 
@@ -123,8 +153,7 @@ export default {
           payload.direccion = this.formData.direccion.trim();
         }
 
-        await axios.patch(
-          `${API_BASE_URL}/usuarios/perfil`,
+        await apiClient.patch('/usuarios/perfil',
           payload,
           {
             headers: {
@@ -167,8 +196,7 @@ export default {
         this.mensajePassword = '';
         
         const token = localStorage.getItem('access_token');
-        await axios.patch(
-          `${API_BASE_URL}/usuarios/cambiar-password`,
+        await apiClient.patch('/usuarios/cambiar-password',
           {
             nuevaPassword: this.passwordData.nueva,
           },
@@ -201,7 +229,7 @@ export default {
       try {
         this.cargandoPedidos = true;
         const token = localStorage.getItem('access_token');
-        const response = await axios.get(`${API_BASE_URL}/ordenes`, {
+        const response = await apiClient.get('/ordenes', {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -268,7 +296,7 @@ export default {
     
     verDetallePedido(pedidoId) {
       // Aquí puedes implementar la lógica para ver el detalle del pedido
-      alert(`Ver detalle del pedido #${pedidoId}`);
+      this.$store.dispatch('mostrarToast', { mensaje: `Ver detalle del pedido #${pedidoId}`, tipo: 'info' });
     },
     
     buscarProductos(query) {
@@ -276,12 +304,11 @@ export default {
     },
     
     cerrarSesion() {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('user_id');
-      localStorage.removeItem('user_rol');
-      this.isAuthenticated = false;
-      this.$router.push('/login');
+      // Usar el servicio de autenticación centralizado
+      authService.logoutAndRedirect(this.$router);
+      
+      // Limpiar el estado de Vuex
+      this.$store.dispatch('limpiarTodo');
     }
   },
   watch: {

@@ -1,5 +1,5 @@
-import axios from "axios";
-import { API_BASE_URL } from '@/config/api';
+import apiClient from '@/services/api';
+import { getImageUrl } from '@/config/api';
 import HeaderAnth from "../HeaderAnth/HeaderAnth.vue";
 import FooterAnth from "../FooterAnth/FooterAnth.vue";
 import ContactoAsesor from '../ContactoAsesor/ContactoAsesor.vue';
@@ -23,46 +23,92 @@ export default {
       zoomActivo: false,
       currentImageIndex: 0,
       carouselInterval: null,
+      // Garantías cargadas desde la API
+      garantiasPorMarca: {},
+      garantiaDefault: { meses: 6, mensaje: 'Garantía de 6 meses por defecto' },
     };
   },
   computed: {
     imagenPrincipal() {
       if (this.imagenes && this.imagenes.length > 0) {
-        // Usar el índice actual del carousel
+        // La URL ya está procesada en cargarProducto(), solo retornarla
         return this.imagenes[this.currentImageIndex].ruta_imagen;
       }
-      return '/Productos/placeholder-product.png';
+      return '/placeholder_product.jpg';
+    },
+    // Computed property para obtener la garantía según la marca
+    garantiaProducto() {
+      if (!this.producto || !this.producto.marca) {
+        return this.garantiaDefault;
+      }
+      
+      const marca = this.producto.marca.trim();
+      
+      // Buscar coincidencia exacta primero
+      if (this.garantiasPorMarca[marca]) {
+        return this.garantiasPorMarca[marca];
+      }
+      
+      // Buscar coincidencia parcial (case insensitive)
+      const marcaKey = Object.keys(this.garantiasPorMarca).find(key => 
+        key.toLowerCase() === marca.toLowerCase() ||
+        marca.toLowerCase().includes(key.toLowerCase()) ||
+        key.toLowerCase().includes(marca.toLowerCase())
+      );
+      
+      if (marcaKey) {
+        return this.garantiasPorMarca[marcaKey];
+      }
+      
+      // Retornar garantía por defecto
+      return this.garantiaDefault;
     },
     mostrarStock() {
       if (!this.producto) return '';
-      if (this.producto.stock === 0) {
+      const stock = parseInt(this.producto.existenciaTotal) || 0;
+      if (stock === 0) {
         return 'Sin stock';
-      } else if (this.producto.stock <= 5) {
-        return `${this.producto.stock} unidades - Quedan pocas unidades`;
+      } else if (stock <= 5) {
+        return `${stock} unidades - Quedan pocas unidades`;
       } else {
         return 'Disponible';
       }
     }
   },
   methods: {
+    regresar() {
+      if (window.history.length > 1) {
+        this.$router.back();
+      } else {
+        this.$router.push('/productos');
+      }
+    },
+
+    handleImageError(event) {
+      // Prevenir loop infinito: solo cambiar si no es ya el placeholder
+      if (!event.target.dataset.fallback) {
+        event.target.dataset.fallback = 'true';
+        event.target.src = '/placeholder_product.jpg';
+      }
+    },
     async cargarProducto() {
       this.isLoading = true;
       this.errorMessage = "";
 
-      const productoId = this.$route.params.id;
+      const productoCodigo = this.$route.params.id;
       try {
         // Obtener los datos del producto
-        const response = await axios.get(
-          `${API_BASE_URL}/tienda/productos/${productoId}`
-        );
+        const response = await apiClient.get(`/tienda/productos/${productoCodigo}`);
         this.producto = response.data;
 
         // Cargar imágenes del producto
         try {
-          const imagenesResponse = await axios.get(
-            `${API_BASE_URL}/images/producto/${productoId}`
-          );
-          this.imagenes = imagenesResponse.data;
+          const imagenesResponse = await apiClient.get(`/images/producto/${productoCodigo}`);
+          // Transformar las rutas de imágenes a URLs completas (procesar aquí para miniaturas)
+          this.imagenes = imagenesResponse.data.map(img => ({
+            ...img,
+            ruta_imagen: getImageUrl(img.ruta_imagen) // Procesar con getImageUrl para que las miniaturas funcionen
+          }));
         } catch (imgError) {
           console.warn('No se pudieron cargar las imágenes:', imgError);
           this.imagenes = [];
@@ -70,10 +116,17 @@ export default {
 
         // Registrar en historial de productos vistos (Vuex + localStorage)
         if (this.$store) {
-          this.$store.dispatch('registrarProductoVisto', this.producto);
+          // Agregar la imagen_url al producto antes de registrarlo
+          const productoConImagen = {
+            ...this.producto,
+            imagen_url: this.imagenes.length > 0 
+              ? this.imagenes[0].ruta_imagen 
+              : '/Productos/placeholder-product.png'
+          };
+          this.$store.dispatch('registrarProductoVisto', productoConImagen);
         }
 
-        // Cargar productos relacionados de la misma categoría
+        // Cargar productos relacionados de la misma marca
         await this.cargarProductosRelacionados();
       } catch (error) {
         console.error('Error al cargar producto:', error);
@@ -84,25 +137,39 @@ export default {
       }
     },
     async cargarProductosRelacionados() {
-      if (!this.producto || !this.producto.categoria) {
-        console.log('No se puede cargar productos relacionados: producto o categoría no disponible');
+      if (!this.producto || !this.producto.marca) {
+        console.log('No se puede cargar productos relacionados: producto o marca no disponible');
         return;
       }
 
       try {
-        console.log('Cargando productos relacionados de categoría:', this.producto.categoria);
+        console.log('Cargando productos relacionados de marca:', this.producto.marca);
         
-        const response = await axios.get(`${API_BASE_URL}/tienda/productos`, {
+        const response = await apiClient.get('/tienda/productos', {
           params: {
-            categoria: this.producto.categoria,
+            marca: this.producto.marca,
           }
         });
         
         console.log('Productos obtenidos:', response.data.length);
         
-        // Filtrar el producto actual y limitar a 3
+        // Filtrar el producto actual, mapear imágenes y limitar a 3
         this.productosRelacionados = response.data
-          .filter(p => p.id !== this.producto.id)
+          .filter(p => p.codigo !== this.producto.codigo)
+          .map(producto => {
+            let rutaImagen = '/Productos/placeholder-product.png';
+            if (producto.productImages?.length > 0) {
+              const imagenPrincipal = producto.productImages.find(img => img.es_principal);
+              rutaImagen = imagenPrincipal?.ruta_imagen || producto.productImages[0].ruta_imagen;
+            } else if (producto.imagen_url) {
+              rutaImagen = producto.imagen_url;
+            }
+            
+            return {
+              ...producto,
+              imagen_url: getImageUrl(rutaImagen)
+            };
+          })
           .slice(0, 3);
           
         console.log('Productos relacionados filtrados:', this.productosRelacionados.length);
@@ -135,6 +202,12 @@ export default {
     agregarAlCarrito() {
       if (!this.producto) return;
 
+      // Verificar si el usuario está autenticado
+      if (!localStorage.getItem('access_token')) {
+        this.$router.push('/login');
+        return;
+      }
+
       // Obtener carrito del localStorage
       let carrito = [];
       const carritoGuardado = localStorage.getItem('carrito');
@@ -143,23 +216,24 @@ export default {
       }
 
       // Verificar si el producto ya está en el carrito
-      const productoExistente = carrito.find(p => p.id === this.producto.id);
+      const productoExistente = carrito.find(p => p.codigo === this.producto.codigo);
       
       if (productoExistente) {
         // Aumentar cantidad
         productoExistente.cantidad++;
-        alert('Cantidad actualizada en el carrito');
+        this.$store.dispatch('mostrarToast', { mensaje: 'Cantidad actualizada en el carrito', tipo: 'success' });
       } else {
         // Agregar nuevo producto
         carrito.push({
-          id: this.producto.id,
-          nombre: this.producto.nombre_producto,
+          codigo: this.producto.codigo,
+          producto: this.producto.producto,
           marca: this.producto.marca,
-          precio: this.producto.precio,
+          costoTotal: this.producto.costoTotal,
           cantidad: 1,
-          imagen_url: this.imagenPrincipal
+          imagen_url: this.imagenPrincipal,
+          medida: this.producto.medida
         });
-        alert('Producto agregado al carrito');
+        this.$store.dispatch('mostrarToast', { mensaje: 'Producto agregado al carrito', tipo: 'success' });
       }
 
       // Guardar en localStorage
@@ -201,15 +275,35 @@ export default {
         this.carouselInterval = null;
       }
     },
-    verProducto(productoId) {
+    verProducto(productoCodigo) {
       this.$router.push({
         name: 'ProductoDetalle',
-        params: { id: productoId }
+        params: { id: productoCodigo }
       });
+    },
+    async cargarGarantias() {
+      try {
+        const response = await apiClient.get('/garantias/activas');
+        const garantias = response.data || [];
+        
+        // Convertir array a objeto para búsqueda rápida por marca
+        this.garantiasPorMarca = {};
+        garantias.forEach(g => {
+          this.garantiasPorMarca[g.marca] = {
+            meses: g.meses,
+            mensaje: g.mensaje
+          };
+        });
+      } catch (error) {
+        console.warn('No se pudieron cargar las garantías desde la API:', error);
+        // Mantener el objeto vacío, se usará la garantía por defecto
+      }
     },
   },
   async created() {
     this.isAuthenticated = !!localStorage.getItem("access_token");
+    // Cargar garantías desde la API
+    await this.cargarGarantias();
     // El watch de $route.params.id se encargará de cargar el producto
     // con immediate: true
   },

@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="page-layout">
     <HeaderAnth
       :searchQuery="searchQuery"
       :isAuthenticated="isAuthenticated"
@@ -17,49 +17,9 @@
         </p>
       </div>
 
-      <!-- Layout con productos y filtros -->
+      <!-- Layout con filtros y productos -->
       <div class="content-layout">
-        <!-- Grid de productos a la izquierda -->
-        <div class="productos-section">
-          <div class="productos-grid">
-        <div
-          v-for="producto in productosFiltrados"
-          :key="producto.id"
-          class="producto-card"
-        >
-          <img 
-            :src="producto.imagen_url" 
-            :alt="producto.nombre_producto" 
-            @click="verDetalle(producto.id)"
-            style="cursor: pointer;"
-          />
-          <div class="producto-info">
-            <span class="marca-tag">{{ producto.marca }}</span>
-            <h3>{{ producto.nombre_producto }}</h3>
-            <p class="descripcion">{{ producto.descripcion }}</p>
-            <div class="producto-footer">
-              <div>
-                <p class="precio" v-if="isAuthenticated">${{ producto.precio }}</p>
-                <p class="precio" v-else>Inicia sesión para ver precio</p>
-                <p v-if="isAuthenticated" style="font-size: 0.75em; color: #999; margin: 0;">incluido IVA</p>
-              </div>
-              <p class="stock" :class="{ 'sin-stock': producto.stock === 0, 'pocas-unidades': producto.stock > 0 && producto.stock <= 5 }">
-                {{ obtenerTextoStock(producto.stock) }}
-              </p>
-            </div>
-            <button @click="verDetalle(producto.id)" class="ver-btn">
-              Ver Detalles
-            </button>
-          </div>
-        </div>
-          </div>
-
-          <div v-if="productosFiltrados.length === 0" class="no-productos">
-            <p>No hay productos disponibles en esta categoría.</p>
-          </div>
-        </div>
-
-        <!-- Filtros en sidebar a la derecha -->
+        <!-- Filtros en sidebar a la izquierda -->
         <aside class="filtros-sidebar" v-if="marcasDisponibles.length > 0">
           <div class="filtros-container">
             <h3 class="filtros-title">Filtros</h3>
@@ -171,6 +131,48 @@
             </div>
           </div>
         </aside>
+
+        <!-- Grid de productos a la derecha -->
+        <div class="productos-section">
+          <div class="productos-grid">
+            <div
+              v-for="producto in productosFiltrados"
+              :key="producto.codigo"
+              class="producto-card"
+            >
+              <ProductImageCarousel
+                :images="getProductImages(producto)"
+                :alt-text="producto.producto"
+                :auto-play="true"
+                :auto-play-interval="3000"
+                @click="verDetalle(producto.codigo)"
+              />
+              <div class="producto-info">
+                <span class="marca-tag">{{ producto.marca }}</span>
+                <span class="codigo-tag">Cód: {{ producto.codigo }}</span>
+                <h3>{{ producto.producto }}</h3>
+                <p class="descripcion">{{ producto.medida }}</p>
+                <div class="producto-footer">
+                  <div>
+                    <p class="precio" v-if="isAuthenticated">${{ formatPrice(producto.costoTotal) }}</p>
+                    <p class="precio" v-else>Inicia sesión para ver precio</p>
+                    <p v-if="isAuthenticated" style="font-size: 0.75em; color: #999; margin: 0;">incluido IVA</p>
+                  </div>
+                  <p class="stock" :class="{ 'sin-stock': parseInt(producto.existenciaTotal) === 0, 'pocas-unidades': parseInt(producto.existenciaTotal) > 0 && parseInt(producto.existenciaTotal) < 3 }">
+                    {{ obtenerTextoStock(parseInt(producto.existenciaTotal)) }}
+                  </p>
+                </div>
+                <button @click="verDetalle(producto.codigo)" class="ver-btn">
+                  Ver Detalles
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="productosFiltrados.length === 0" class="no-productos">
+            <p>No hay productos disponibles en esta categoría.</p>
+          </div>
+        </div>
       </div>
     </div>
 

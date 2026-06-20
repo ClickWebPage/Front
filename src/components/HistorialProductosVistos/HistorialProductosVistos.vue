@@ -4,21 +4,25 @@
     <div class="historial-grid">
       <div
         v-for="producto in historial"
-        :key="producto.id"
+        :key="producto.codigo"
         class="historial-card"
-        @click="verDetalle(producto.id)"
+        @click="verDetalle(producto.codigo)"
       >
         <img
           class="historial-imagen"
-          :src="producto.imagen_url || 'ruta-imagen-default.png'"
-          :alt="producto.nombre || 'Producto visto recientemente'"
+          :src="getImageUrl(producto)"
+          :alt="producto.producto || 'Producto visto recientemente'"
+          @error="handleImageError"
         />
         <div class="historial-info">
-          <p class="historial-nombre">{{ producto.nombre || 'Producto' }}</p>
-          <p v-if="producto.precio !== null" class="historial-precio">
-            ${{ formatPrice(producto.precio) }}
-          </p>
-          <p v-if="producto.precio !== null" style="font-size: 0.7em; color: #999; margin: 0;">incluido IVA</p>
+          <p class="historial-nombre">{{ producto.producto || 'Producto' }}</p>
+          <div v-if="isAuthenticated && producto.costoTotal !== null">
+            <p class="historial-precio">
+              ${{ formatPrice(producto.costoTotal) }}
+            </p>
+            <p style="font-size: 0.7em; color: #999; margin: 0;">incluido IVA</p>
+          </div>
+          <p v-else-if="!isAuthenticated" class="historial-precio">Inicia sesión para ver precio</p>
           <p class="historial-fecha">Visto hace {{ tiempoRelativo(producto.vistoEn) }}</p>
         </div>
       </div>

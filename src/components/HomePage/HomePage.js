@@ -1,9 +1,11 @@
-import axios from "axios";
-import { API_BASE_URL } from '@/config/api';
+import apiClient from '@/services/api';
+import { getImageUrl } from '@/config/api';
+import authService from '@/services/auth';
 import HeaderAnth from "../HeaderAnth/HeaderAnth.vue";
 import FooterAnth from "../FooterAnth/FooterAnth.vue";
 import CarouselBanner from "../CarouselBanner/CarouselBanner.vue";
 import HistorialProductosVistos from "../HistorialProductosVistos/HistorialProductosVistos.vue";
+import ProductImageCarousel from "../ProductImageCarousel/ProductImageCarousel.vue";
 
 export default {
   name: "HomePage",
@@ -12,6 +14,7 @@ export default {
     CarouselBanner,
     FooterAnth,
     HistorialProductosVistos,
+    ProductImageCarousel,
   },
   data() {
     return {
@@ -21,62 +24,20 @@ export default {
       promociones: [],
       searchQuery: "",
       isAuthenticated: false,
+      userRole: null,
       limiteProductos: 10,
       selectedPriceRange: "", // '', 'low', 'mid', 'high'
       
-      // Video destacado - PERSONALIZA ESTOS DATOS
-      videoDestacado: "https://www.youtube.com/embed/r-DF3-FS_6k?si=DW930ua3fe_K9GjD&autoplay=1&mute=1&loop=1&playlist=r-DF3-FS_6k", // Video con autoplay y loop
+      // Video destacado - Se cargará desde la API
+      videoDestacado: "",
 
-
+      // Playlist de videos
+      videoPlaylist: [],
+      currentVideoIndex: 0,
+      videoTimer: null,
       
-      videoTitulo: "Laptop Gaming de Última Generación",
-      videoDescripcion: "Conoce las características y rendimiento de nuestro producto estrella",
-      
-      // Datos de categorías más visitadas (placeholder)
-      categoriasMasVisitadas: [
-        { 
-          id: 1, 
-          nombre: 'Laptops', 
-          icon: '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="2" y1="20" x2="22" y2="20"></line></svg>', 
-          visitas: 1250, 
-          productos: 45 
-        },
-        { 
-          id: 2, 
-          nombre: 'Componentes', 
-          icon: '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>', 
-          visitas: 980, 
-          productos: 120 
-        },
-        { 
-          id: 3, 
-          nombre: 'Periféricos', 
-          icon: '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="20" height="12" rx="2" ry="2"></rect><path d="M6 13h.01"></path><path d="M10 13h.01"></path><path d="M14 13h.01"></path><path d="M18 13h.01"></path><path d="M6 17h.01"></path><path d="M10 17h.01"></path><path d="M14 17h.01"></path><path d="M18 17h.01"></path></svg>', 
-          visitas: 850, 
-          productos: 85 
-        },
-        { 
-          id: 4, 
-          nombre: 'Almacenamiento', 
-          icon: '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>', 
-          visitas: 720, 
-          productos: 60 
-        },
-        { 
-          id: 5, 
-          nombre: 'Redes', 
-          icon: '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>', 
-          visitas: 650, 
-          productos: 38 
-        },
-        { 
-          id: 6, 
-          nombre: 'Audio', 
-          icon: '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>', 
-          visitas: 540, 
-          productos: 52 
-        },
-      ],
+      // Datos de categorías más visitadas (se cargarán desde la API)
+      categoriasMasVisitadas: [],
       
       // Mapeo de categorías a marcas (para simular productos por categoría)
       categoriaMapping: {
@@ -91,11 +52,12 @@ export default {
   },
   async created() {
     this.isAuthenticated = !!localStorage.getItem("access_token");
+    this.userRole = authService.getUserRole();
 
     try {
       // Cargar Banners desde la API
       try {
-        const bannersResponse = await axios.get(`${API_BASE_URL}/tienda/banners`);
+        const bannersResponse = await apiClient.get('/tienda/banners');
         this.banners = bannersResponse.data.data || bannersResponse.data || [];
         console.log('Banners cargados:', this.banners.length);
       } catch (bannerError) {
@@ -107,15 +69,48 @@ export default {
         ];
       }
 
+      // URL de video predeterminado (placeholder cuando no hay playlist configurada)
+      const VIDEO_PLACEHOLDER = 'https://www.youtube.com/embed/r-DF3-FS_6k?autoplay=1&mute=1&loop=1&playlist=r-DF3-FS_6k';
+
+      // Cargar Playlist de Videos desde la API
+      try {
+        const playlistResponse = await apiClient.get('/configuracion/video-playlist');
+        const playlist = playlistResponse.data.valor || [];
+        if (playlist.length > 0) {
+          this.videoPlaylist = playlist;
+          this.videoDestacado = this.buildEmbedUrl(playlist[0].url);
+          this.startVideoTimer();
+        } else {
+          // Sin videos configurados → mostrar placeholder
+          this.videoDestacado = VIDEO_PLACEHOLDER;
+        }
+      } catch (videoError) {
+        console.error('Error al cargar playlist:', videoError);
+        // Error de red → mostrar placeholder
+        this.videoDestacado = VIDEO_PLACEHOLDER;
+      }
+
       // Cargar Productos
-      const productosResponse = await axios.get(`${API_BASE_URL}/tienda/productos`);
-      this.productos = productosResponse.data.map((producto) => ({
-        ...producto,
-        imagen_url:
-          producto.media?.length > 0
-            ? `https://backend-chpc-production.up.railway.app${producto.media[0].url}`
-            : producto.imagen_url || "ruta-imagen-default.png",
-      }));
+      const productosResponse = await apiClient.get('/tienda/productos');
+      // La API devuelve { data: [...], total, page, limit, totalPages }
+      const productosArray = productosResponse.data.data || productosResponse.data;
+      this.productos = productosArray.map((producto) => {
+        // Obtener la ruta de la imagen (principal o primera disponible)
+        let rutaImagen = '/Productos/placeholder-product.png';
+        if (producto.productImages?.length > 0) {
+          const imagenPrincipal = producto.productImages.find(img => img.es_principal);
+          rutaImagen = imagenPrincipal?.ruta_imagen || producto.productImages[0].ruta_imagen;
+        } else if (producto.media?.length > 0) {
+          rutaImagen = producto.media[0].url;
+        } else if (producto.imagen_url) {
+          rutaImagen = producto.imagen_url;
+        }
+        
+        return {
+          ...producto,
+          imagen_url: getImageUrl(rutaImagen)
+        };
+      });
       
       console.log('Total de productos cargados:', this.productos.length);
       console.log('Ejemplo de producto:', this.productos[0]);
@@ -124,25 +119,50 @@ export default {
       const categoriasUnicas = [...new Set(this.productos.map(p => p.categoria).filter(Boolean))];
       console.log('Categorías únicas encontradas:', categoriasUnicas);
       
+      // Cargar Categorías desde la API
+      try {
+        const categoriasResponse = await apiClient.get('/tienda/productos/categorias/lista');
+        this.categoriasMasVisitadas = categoriasResponse.data.map((cat, index) => ({
+          id: index + 1,
+          nombre: cat.nombre_categoria,
+          icon: this.obtenerIconoCategoria(cat.nombre_categoria),
+          visitas: Math.floor(Math.random() * 1000) + 500, // Simulado por ahora
+          productos: cat.total_productos
+        }));
+        console.log('Categorías cargadas:', this.categoriasMasVisitadas.length);
+      } catch (categoriaError) {
+        console.error('Error al cargar categorías:', categoriaError);
+        // Las categorías quedarán vacías si falla
+      }
+      
       // Cargar Promociones Activas
-      const promocionesResponse = await axios.get(`${API_BASE_URL}/promociones/activas`);
+      const promocionesResponse = await apiClient.get('/promociones/activas');
       this.promociones = promocionesResponse.data;
       
       // Combinar promociones con productos
       this.aplicarPromocionesAProductos();
       
-      this.cargarMasProductos();
+      // Procesar la búsqueda inicial DESPUÉS de cargar productos (si existe)
+      const search = this.$route.query.search;
+      if (search) {
+        this.searchQuery = search;
+        this.buscarProductos(search);
+      } else {
+        this.cargarMasProductos();
+      }
     } catch (error) {
       console.error("Error al cargar los datos:", error);
     }
-
-    // Procesar la búsqueda inicial (si existe)
-    const search = this.$route.query.search;
-    if (search) {
-      this.buscarProductos(search);
-    }
   },
   computed: {
+    currentVideo() {
+      if (this.videoPlaylist.length === 0) return null;
+      return this.videoPlaylist[this.currentVideoIndex] || this.videoPlaylist[0];
+    },
+    currentVideoEmbedUrl() {
+      if (this.currentVideo) return this.buildEmbedUrl(this.currentVideo.url);
+      return this.videoDestacado;
+    },
     productosDestacados() {
       if (!this.productos || this.productos.length === 0) return [];
 
@@ -153,13 +173,61 @@ export default {
       return base.slice(0, 8);
     },
   },
+  beforeUnmount() {
+    this.stopVideoTimer();
+  },
   methods: {
+    formatPrice(price) {
+      const value = Number(price);
+      if (Number.isNaN(value)) return '0.00';
+      return value.toFixed(2);
+    },
+    // ===== PLAYLIST =====
+    buildEmbedUrl(baseUrl) {
+      try {
+        const url = new URL(baseUrl);
+        url.searchParams.set('autoplay', '1');
+        url.searchParams.set('mute', '1');
+        const videoId = baseUrl.match(/\/embed\/([^?&]+)/)?.[1];
+        if (videoId) url.searchParams.set('playlist', videoId);
+        return url.toString();
+      } catch { return baseUrl; }
+    },
+    nextVideo() {
+      if (this.videoPlaylist.length <= 1) return;
+      this.currentVideoIndex = (this.currentVideoIndex + 1) % this.videoPlaylist.length;
+      this.restartVideoTimer();
+    },
+    prevVideo() {
+      if (this.videoPlaylist.length <= 1) return;
+      this.currentVideoIndex = (this.currentVideoIndex - 1 + this.videoPlaylist.length) % this.videoPlaylist.length;
+      this.restartVideoTimer();
+    },
+    startVideoTimer() {
+      this.stopVideoTimer();
+      const current = this.videoPlaylist[this.currentVideoIndex];
+      if (!current || this.videoPlaylist.length <= 1) return;
+      const secs = (current.duracion_segundos || 30) * 1000;
+      this.videoTimer = setTimeout(() => {
+        this.nextVideo();
+      }, secs);
+    },
+    restartVideoTimer() {
+      this.stopVideoTimer();
+      this.startVideoTimer();
+    },
+    stopVideoTimer() {
+      if (this.videoTimer) {
+        clearTimeout(this.videoTimer);
+        this.videoTimer = null;
+      }
+    },
     aplicarPromocionesAProductos() {
       // Agregar información de promoción a cada producto
       this.productos = this.productos.map(producto => {
-        const promocion = this.promociones.find(p => p.producto_id === producto.id);
+        const promocion = this.promociones.find(p => p.producto_id === producto.codigo);
         if (promocion) {
-          const precioOriginal = producto.precio;
+          const precioOriginal = producto.costoTotal;
           const precioConDescuento = precioOriginal - (precioOriginal * promocion.porcentaje_descuento / 100);
           return {
             ...producto,
@@ -186,7 +254,7 @@ export default {
       // Filtrado por rango de precio
       if (this.selectedPriceRange) {
         lista = lista.filter((producto) => {
-          const precio = Number(producto.precio ?? 0);
+          const precio = Number(producto.costoTotal ?? 0);
           if (this.selectedPriceRange === "low") {
             return precio < 100;
           }
@@ -204,17 +272,17 @@ export default {
       if (query !== "") {
         lista = lista.filter(
           (producto) => {
-            const nombre = (producto.nombre_producto || "").toLowerCase();
-            const descripcion = (producto.descripcion || "").toLowerCase();
+            const nombre = (producto.producto || "").toLowerCase();
             const marca = (producto.marca || "").toLowerCase();
-            const categoria = (producto.categoria || "").toLowerCase();
-            const sku = (producto.sku || "").toLowerCase();
+            const medida = (producto.medida || "").toLowerCase();
+            const almacen = (producto.almacen || "").toLowerCase();
+            const codigo = String(producto.codigo || "").toLowerCase();
             
             return nombre.includes(query) ||
-                   descripcion.includes(query) ||
                    marca.includes(query) ||
-                   categoria.includes(query) ||
-                   sku.includes(query);
+                   medida.includes(query) ||
+                   almacen.includes(query) ||
+                   codigo.includes(query);
           }
         );
       }
@@ -237,8 +305,15 @@ export default {
 
       this.productosMostrados = [...this.productosMostrados, ...siguienteBloque];
     },
-    verDetalle(id) {
-      this.$router.push({ name: "ProductoDetalle", params: { id } });
+    verDetalle(codigo) {
+      this.$router.push({ name: "ProductoDetalle", params: { id: codigo } });
+    },
+    handleImageError(event) {
+      // Prevenir loop infinito: solo cambiar si no es ya el placeholder
+      if (!event.target.dataset.fallback) {
+        event.target.dataset.fallback = 'true';
+        event.target.src = '/placeholder_product.jpg';
+      }
     },
     buscarProductos(query) {
       this.searchQuery = query.trim();
@@ -251,9 +326,11 @@ export default {
       this.aplicarFiltros();
     },
     cerrarSesion() {
-      localStorage.removeItem("access_token");
-      this.isAuthenticated = false;
-      this.$router.replace("/login");
+      // Usar el servicio de autenticación centralizado
+      authService.logoutAndRedirect(this.$router);
+      
+      // Limpiar el estado de Vuex
+      this.$store.dispatch('limpiarTodo');
     },
     redirigirLogin() {
       this.$router.push("/login");
@@ -268,6 +345,12 @@ export default {
     agregarAlCarrito(producto) {
       if (!producto) return;
 
+      // Verificar si el usuario está autenticado
+      if (!localStorage.getItem('access_token')) {
+        this.$router.push('/login');
+        return;
+      }
+
       // Obtener carrito del localStorage
       let carrito = [];
       const carritoGuardado = localStorage.getItem('carrito');
@@ -276,52 +359,86 @@ export default {
       }
 
       // Verificar si el producto ya está en el carrito
-      const productoExistente = carrito.find(p => p.id === producto.id);
+      const productoExistente = carrito.find(p => p.codigo === producto.codigo);
       
       if (productoExistente) {
         // Aumentar cantidad
         productoExistente.cantidad++;
-        alert('Cantidad actualizada en el carrito');
+        this.$store.dispatch('mostrarToast', { mensaje: 'Cantidad actualizada en el carrito', tipo: 'success' });
       } else {
-        // Agregar nuevo producto
         carrito.push({
-          id: producto.id,
-          nombre: producto.nombre_producto,
+          codigo: producto.codigo,
+          producto: producto.producto,
           marca: producto.marca,
-          precio: producto.precio,
+          costoTotal: producto.costoTotal,
           cantidad: 1,
-          imagen_url: producto.imagen_url
+          imagen_url: producto.imagen_url,
+          medida: producto.medida
         });
-        alert('Producto agregado al carrito');
+        this.$store.dispatch('mostrarToast', { mensaje: 'Producto agregado al carrito', tipo: 'success' });
       }
 
       // Guardar en localStorage
       localStorage.setItem('carrito', JSON.stringify(carrito));
     },
-    filtrarPorCategoria(nombreCategoria) {
-      // Convertir el nombre de categoría a slug (minúsculas sin espacios)
-      const categoriaSlug = nombreCategoria.toLowerCase().replace(/\s+/g, '-');
+    getProductImages(producto) {
+      // Retornar array de imágenes del producto
+      if (producto.productImages && producto.productImages.length > 0) {
+        // Ordenar para que la imagen principal esté primero
+        const imagesSorted = [...producto.productImages].sort((a, b) => {
+          if (a.es_principal) return -1;
+          if (b.es_principal) return 1;
+          return 0;
+        });
+        return imagesSorted;
+      }
       
-      // Navegar a la página de productos por categoría
+      // Fallback a imagen_url si no hay productImages
+      if (producto.imagen_url) {
+        return [producto.imagen_url];
+      }
+      
+      return [];
+    },
+    filtrarPorCategoria(nombreCategoria) {
+      console.log('Filtrando por categoría:', nombreCategoria);
+      
+      // Navegar a la página de productos por categoría (usar nombre exacto)
       this.$router.push({ 
         name: 'ProductosPorCategoria', 
-        params: { categoria: categoriaSlug } 
+        params: { categoria: nombreCategoria } 
       });
     },
+    obtenerIconoCategoria(nombreCategoria) {
+      const iconos = {
+        'Laptops': '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="2" y1="20" x2="22" y2="20"></line></svg>',
+        'Tintas y Toners': '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>',
+        'Impresoras': '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>',
+        'Monitores': '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>',
+        'Accesorios': '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="20" height="12" rx="2" ry="2"></rect><path d="M6 13h.01"></path><path d="M10 13h.01"></path><path d="M14 13h.01"></path><path d="M18 13h.01"></path></svg>',
+        'Almacenamiento': '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline></svg>',
+        'Componentes': '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>',
+        'Redes': '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>',
+        'Software': '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
+        'Otros': '<svg xmlns="http://www.w3.org/2000/svg" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>',
+      };
+      
+      return iconos[nombreCategoria] || iconos['Otros'];
+    },
     getProductosPorCategoria(nombreCategoria) {
-      // Intentar encontrar productos cuya categoría coincida (insensible a mayúsculas)
+      // Intentar encontrar productos cuya marca coincida (insensible a mayúsculas)
       let productosFiltrados = this.productos.filter((producto) =>
-        producto.categoria?.toLowerCase() === nombreCategoria.toLowerCase()
+        producto.marca?.toLowerCase() === nombreCategoria.toLowerCase()
       );
 
-      // Si no hay coincidencia exacta, probar coincidencia parcial en la categoría
+      // Si no hay coincidencia exacta, probar coincidencia parcial en la marca
       if (productosFiltrados.length === 0) {
         productosFiltrados = this.productos.filter((producto) =>
-          producto.categoria?.toLowerCase().includes(nombreCategoria.toLowerCase())
+          producto.marca?.toLowerCase().includes(nombreCategoria.toLowerCase())
         );
       }
 
-      // Si aún así no hay productos para esa categoría, usamos un fallback
+      // Si aún así no hay productos para esa marca, usamos un fallback
       if (productosFiltrados.length === 0) {
         productosFiltrados = this.productos.slice(0, 6);
       }

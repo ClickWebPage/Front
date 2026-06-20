@@ -6,12 +6,112 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
 }
 
 .productos-header h2 {
   margin: 0;
   color: #2c3e50;
+}
+
+/* Barra de filtros */
+.filtros-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  align-items: flex-end;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.filtro-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.filtro-grupo label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+}
+
+.filtro-input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  min-width: 200px;
+}
+
+.filtro-input:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+/* Búsqueda con selector de tipo */
+.filtro-busqueda-grupo {
+  flex: 1;
+  min-width: 280px;
+}
+
+.busqueda-combinada {
+  display: flex;
+  gap: 0;
+}
+
+.filtro-tipo-busqueda {
+  min-width: 110px !important;
+  border-radius: 4px 0 0 4px !important;
+  border-right: none !important;
+  background: #eef2f7 !important;
+  font-weight: 600;
+  color: #2c3e50;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.busqueda-combinada .filtro-input {
+  border-radius: 0 4px 4px 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.busqueda-combinada .filtro-tipo-busqueda:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: none;
+  z-index: 1;
+}
+
+.filtro-select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  min-width: 150px;
+  background: white;
+  cursor: pointer;
+}
+
+.filtro-select:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
+.btn-sm {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.resultados-info {
+  margin-bottom: 15px;
+  color: #666;
+  font-size: 14px;
 }
 
 .loading {
@@ -49,14 +149,14 @@
 .producto-imagen {
   position: relative;
   width: 100%;
-  height: 200px;
+  height: 150px;
   background: #f5f5f5;
 }
 
 .producto-imagen img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .badge-inactivo {
@@ -97,6 +197,29 @@
 .producto-info .stock {
   color: #34495e;
   font-size: 14px;
+}
+
+.producto-info .fecha-modificacion {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #5d6d7e;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #dce1e7;
+}
+
+.producto-info .fecha-modificacion .fecha-icono {
+  font-size: 13px;
+}
+
+.producto-info .fecha-modificacion.sin-fecha {
+  opacity: 0.5;
+}
+
+.producto-info .fecha-modificacion .texto-sin-fecha {
+  font-style: italic;
 }
 
 .producto-actions {
@@ -458,6 +581,137 @@
   background: #c0392b;
 }
 
+/* Paginación */
+.paginacion {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 30px;
+  padding: 20px;
+  flex-wrap: wrap;
+}
+
+.btn-paginacion {
+  padding: 8px 16px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-paginacion:hover:not(:disabled) {
+  background: #2980b9;
+}
+
+.btn-paginacion:disabled {
+  background: #bdc3c7;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.paginas-numeros {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn-pagina {
+  min-width: 40px;
+  height: 40px;
+  padding: 8px;
+  background: white;
+  color: #2c3e50;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.btn-pagina:hover {
+  background: #ecf0f1;
+  border-color: #3498db;
+}
+
+.btn-pagina.activa {
+  background: #3498db;
+  color: white;
+  border-color: #3498db;
+  font-weight: bold;
+}
+
+.pagina-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 40px;
+  color: #7f8c8d;
+  font-size: 14px;
+  font-weight: bold;
+  user-select: none;
+}
+
+.info-pagina {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  color: #666;
+  font-size: 14px;
+  margin-left: 10px;
+  white-space: nowrap;
+  flex-wrap: wrap;
+}
+
+.ir-a-pagina {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ir-a-pagina label {
+  font-size: 14px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.pagina-input {
+  width: 60px;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.pagina-input:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
+.btn-ir {
+  padding: 6px 12px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  transition: background 0.2s;
+}
+
+.btn-ir:hover {
+  background: #2980b9;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .productos-grid {
@@ -476,4 +730,77 @@
   .imagenes-grid {
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   }
+
+  .paginacion {
+    padding: 15px 10px;
+    gap: 8px;
+  }
+
+  .btn-paginacion {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  .btn-pagina {
+    min-width: 36px;
+    height: 36px;
+    padding: 6px;
+    font-size: 13px;
+  }
+
+  .pagina-ellipsis {
+    min-width: 30px;
+    height: 36px;
+    font-size: 13px;
+  }
+
+  .info-pagina {
+    width: 100%;
+    text-align: center;
+    margin-left: 0;
+    margin-top: 10px;
+    justify-content: center;
+  }
+
+  .ir-a-pagina {
+    justify-content: center;
+  }
+
+  .pagina-input {
+    width: 50px;
+    padding: 5px 8px;
+    font-size: 13px;
+  }
+
+  .btn-ir {
+    padding: 5px 10px;
+    font-size: 13px;
+  }
+}
+/* Info row en modal de edición */
+.form-info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f0f4ff;
+  border: 1px solid #c7d7f9;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: #4a5568;
+}
+
+.info-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.info-value {
+  color: #2d3748;
+}
+
+.info-value.sin-dato {
+  color: #a0aec0;
+  font-style: italic;
 }

@@ -28,29 +28,50 @@ import { createStore } from 'vuex';
     }
   }
 
+  let _toastIdCounter = 0;
+
   const store = createStore({
     state: {
       carrito: [],
       historialProductosVistos: cargarHistorialInicial(),
+      toasts: [],
     },
     mutations: {
+      agregarToast(state, toast) {
+        state.toasts.push(toast);
+      },
+      eliminarToast(state, id) {
+        state.toasts = state.toasts.filter((t) => t.id !== id);
+      },
       agregarAlCarrito(state, producto) {
         state.carrito.push(producto);
       },
-      eliminarDelCarrito(state, productoId) {
-        state.carrito = state.carrito.filter((producto) => producto.id !== productoId);
+      eliminarDelCarrito(state, productoCodigo) {
+        state.carrito = state.carrito.filter((producto) => producto.codigo !== productoCodigo);
+      },
+      limpiarCarrito(state) {
+        state.carrito = [];
+      },
+      limpiarHistorial(state) {
+        state.historialProductosVistos = [];
+        localStorage.removeItem(HISTORIAL_KEY);
+      },
+      limpiarTodo(state) {
+        state.carrito = [];
+        state.historialProductosVistos = [];
+        localStorage.removeItem(HISTORIAL_KEY);
       },
       registrarProductoVisto(state, producto) {
         const ahora = Date.now();
         const existenteIndex = state.historialProductosVistos.findIndex(
-          (p) => p.id === producto.id,
+          (p) => p.codigo === producto.codigo,
         );
 
         const entrada = {
-          id: producto.id,
-          nombre: producto.nombre_producto || producto.nombre || '',
+          codigo: producto.codigo,
+          producto: producto.producto || '',
           imagen_url: producto.imagen_url || '',
-          precio: producto.precio ?? null,
+          costoTotal: producto.costoTotal ?? null,
           vistoEn: ahora,
         };
 
@@ -74,11 +95,28 @@ import { createStore } from 'vuex';
       },
     },
     actions: {
+      mostrarToast({ commit }, { mensaje, tipo = 'info', duracion = 4000 }) {
+        const id = ++_toastIdCounter;
+        commit('agregarToast', { id, mensaje, tipo });
+        setTimeout(() => commit('eliminarToast', id), duracion);
+      },
+      cerrarToast({ commit }, id) {
+        commit('eliminarToast', id);
+      },
       agregarAlCarrito({ commit }, producto) {
         commit('agregarAlCarrito', producto);
       },
-      eliminarDelCarrito({ commit }, productoId) {
-        commit('eliminarDelCarrito', productoId);
+      eliminarDelCarrito({ commit }, productoCodigo) {
+        commit('eliminarDelCarrito', productoCodigo);
+      },
+      limpiarCarrito({ commit }) {
+        commit('limpiarCarrito');
+      },
+      limpiarHistorial({ commit }) {
+        commit('limpiarHistorial');
+      },
+      limpiarTodo({ commit }) {
+        commit('limpiarTodo');
       },
       registrarProductoVisto({ commit }, producto) {
         commit('registrarProductoVisto', producto);
@@ -87,6 +125,7 @@ import { createStore } from 'vuex';
     getters: {
       carrito: (state) => state.carrito,
       historialProductosVistos: (state) => state.historialProductosVistos,
+      toasts: (state) => state.toasts,
     },
   });
 

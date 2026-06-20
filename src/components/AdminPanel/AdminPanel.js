@@ -1,0 +1,1200 @@
+import apiClient from '@/services/api';
+import { API_BASE_URL } from '@/config/api';
+import AdminProductos from './AdminProductos.vue';
+import AdminGarantias from './AdminGarantias.vue';
+import AdminPersonalizacion from './AdminPersonalizacion.vue';
+import AdminVideo from './AdminVideo.vue';
+import AdminExcel from './AdminExcel.vue';
+import AdminMetricas from './AdminMetricas.vue';
+import AdminLogs from './AdminLogs.vue';
+import NotificationsPanel from '../NotificationsPanel/NotificationsPanel.vue';
+import NotificationsBell from '../NotificationsPanel/NotificationsBell.vue';
+
+export default {
+  name: 'AdminPanelMain',
+  components: {
+    AdminProductos,
+    AdminGarantias,
+    AdminPersonalizacion,
+    AdminVideo,
+    AdminExcel,
+    AdminMetricas,
+    AdminLogs,
+    NotificationsPanel,
+    NotificationsBell,
+  },
+  data() {
+    return {
+      API_BASE_URL, // Exponer para usar en template si es necesario
+      activeTab: 'promociones',
+      tabs: [
+        { id: 'productos',      label: 'Productos',       icon: ['fas', 'box'] },
+        { id: 'promociones',    label: 'Promociones',     icon: ['fas', 'tag'] },
+        { id: 'garantias',      label: 'Garantías',       icon: ['fas', 'shield'] },
+        { id: 'banners',        label: 'Banners',         icon: ['fas', 'image'] },
+        { id: 'video',          label: 'Video',           icon: ['fas', 'video'] },
+        { id: 'excel',          label: 'Importar Excel',  icon: ['fas', 'file-excel'] },
+        { id: 'logo',           label: 'Logo',            icon: ['fas', 'palette'] },
+        { id: 'metricas',       label: 'Métricas',        icon: ['far', 'eye'] },
+        { id: 'personalizacion', label: 'Personalización', icon: ['fas', 'gear'] },
+        { id: 'usuarios',       label: 'Usuarios',        icon: ['fas', 'person'] },
+        { id: 'permisos',       label: 'Permisos',        icon: ['fas', 'lock'] },
+        { id: 'notificaciones', label: 'Notificaciones',  icon: ['far', 'bell'] },
+        { id: 'actividad',      label: 'Actividad',        icon: ['fas', 'clock-rotate-left'] },
+      ],
+      isAuthenticated: !!localStorage.getItem('access_token'),
+
+      // Permisos
+      userRole: '',
+      isAdmin: false,
+      isVendedor: false,
+
+      // Promociones
+      promociones: [],
+      productos: [],
+      editingPromotion: null,
+      promotionForm: {
+        producto_id: '',
+        porcentaje_descuento: 0,
+        fecha_inicio: '',
+        fecha_fin: '',
+        activa: true,
+      },
+      busquedaProductoPromocion: '',
+      mostrarListaProductosPromo: false,
+      promotionMessage: '',
+      promotionMessageType: '',
+
+      // Banners
+      banners: [],
+      editingBanner: null,
+      bannerForm: {
+        titulo: '',
+        imagen_url: '',
+        producto_id: null,
+      },
+      busquedaProductoBanner: '',
+      mostrarListaProductos: false,
+      bannerMessage: '',
+      bannerMessageType: '',
+
+      // Logo
+      currentLogo: '',
+      logoLoadError: false,
+      logoInputMode: 'url', // 'url' | 'archivo'
+      logoFile: null,
+      logoFilePreview: '',
+      logoForm: {
+        logo_url: '',
+      },
+      logoMessage: '',
+      logoMessageType: '',
+
+      // Usuarios
+      usuarios: [],
+      editingUser: null,
+      currentUserId: null,
+      userForm: {
+        nombre: '',
+        apellido: '',
+        username: '',
+        email: '',
+        password: '',
+        telefono: '',
+        direccion: '',
+        rol: '',
+      },
+      userMessage: '',
+      userMessageType: '',
+
+      // Reset Password
+      showResetPasswordModal: false,
+      resetPasswordUser: null,
+      resetPasswordForm: {
+        nuevaPassword: '',
+        confirmarPassword: '',
+      },
+      resetPasswordMessage: '',
+      resetPasswordMessageType: '',
+      resettingPassword: false,
+
+      // Permisos Temporales
+      permisos: [],
+      vendedores: [],
+      editingPermiso: null,
+      permisoFilter: 'all', // 'all', 'activos', 'expirados'
+      permisoForm: {
+        user_id: '',
+        tipo_permiso: '',
+        fecha_expiracion: '',
+        activo: true,
+        razon: '',
+      },
+      permisoMessage: '',
+      permisoMessageType: '',
+
+      // Control de permisos para vendedores
+      permisosVendedor: {
+        banners: false,
+        promociones: false,
+        logo: false,
+      },
+    };
+  },
+
+  async mounted() {
+    // Primero verificar autenticación
+    const isValid = await this.checkAuth();
+    if (!isValid) return;
+    
+    // Solo cargar datos si la autenticación es válida
+    this.loadPromociones();
+    this.loadProductos();
+    this.loadBanners();
+    this.loadLogo();
+    this.loadUsuarios();
+    this.loadCurrentUserId();
+    if (this.isAdmin) this.loadPermisos();
+    this.loadVendedores();
+    this.loadPermisosVendedor();
+  },
+
+  methods: {
+    goToHome() {
+      this.$router.push('/home');
+    },
+
+    logout() {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('user_rol');
+      localStorage.removeItem('user_nombre');
+      localStorage.removeItem('usuario');
+      localStorage.removeItem('carrito');
+      this.$router.push('/login');
+    },
+
+    // ========== AUDIT LOG ==========
+    async registrarLog(modulo, accion, descripcion, detalle = null, exitoso = true, error_detalle = null) {
+      try {
+        let username = 'desconocido';
+        let nombre   = '';
+        let rol      = localStorage.getItem('user_rol') || 'desconocido';
+
+        // El objeto `usuario` se guarda en localStorage al hacer login
+        const usuarioJson = localStorage.getItem('usuario');
+        if (usuarioJson) {
+          try {
+            const u = JSON.parse(usuarioJson);
+            username = u.username || 'desconocido';
+            nombre   = `${u.nombre || ''} ${u.apellido || ''}`.trim();
+            rol      = u.rol || rol;
+          } catch { /* ignorar */ }
+        }
+
+        await apiClient.post('/audit-log', {
+          usuario_username: username,
+          usuario_nombre:   nombre,
+          usuario_rol:      rol,
+          modulo,
+          accion,
+          descripcion,
+          detalle,
+          exitoso,
+          error_detalle,
+        });
+      } catch (e) {
+        // El log no debe romper el flujo
+        console.warn('No se pudo registrar el log de auditoría:', e?.response?.data || e.message);
+      }
+    },
+    
+    async checkAuth() {
+      const role = localStorage.getItem('user_rol');
+      const token = localStorage.getItem('access_token');
+      
+      // Verificar que hay un token
+      if (!token) {
+        console.error('❌ No hay token de acceso, redirigiendo al login');
+        this.$router.push('/login');
+        return false;
+      }
+      
+      // Verificar el token con el backend
+      try {
+        await apiClient.get('/auth/verificar');
+        console.log('✅ Token válido');
+      } catch (error) {
+        console.error('❌ Token inválido o expirado');
+        // El interceptor de apiClient manejará el refresh o redirigirá al login
+        return false;
+      }
+      
+      this.userRole = role;
+      this.isAdmin = role === 'administrador';
+      this.isVendedor = role === 'vendedor';
+      
+      if (role !== 'administrador' && role !== 'vendedor') {
+        this.$router.push('/');
+        this.$store.dispatch('mostrarToast', { mensaje: 'Acceso denegado: Solo administradores y vendedores', tipo: 'error' });
+        return false;
+      }
+      
+      return true;
+    },
+
+    async loadPermisosVendedor() {
+      if (!this.isVendedor) return;
+      
+      try {
+        const [bannersRes, promocionesRes, logoRes] = await Promise.all([
+          apiClient.get('/permisos-temporales/verificar/banners', this.getAuthHeaders()),
+          apiClient.get('/permisos-temporales/verificar/promociones', this.getAuthHeaders()),
+          apiClient.get('/permisos-temporales/verificar/logo', this.getAuthHeaders()),
+        ]);
+
+        this.permisosVendedor = {
+          banners: bannersRes.data.tienePermiso,
+          promociones: promocionesRes.data.tienePermiso,
+          logo: logoRes.data.tienePermiso,
+        };
+      } catch (error) {
+        console.error('Error al verificar permisos del vendedor:', error);
+      }
+    },
+
+    puedeEditarPromocion() {
+      return this.isAdmin || (this.isVendedor && this.permisosVendedor.promociones);
+    },
+
+    puedeEditarBanner() {
+      return this.isAdmin || (this.isVendedor && this.permisosVendedor.banners);
+    },
+
+    puedeEditarLogo() {
+      return this.isAdmin || (this.isVendedor && this.permisosVendedor.logo);
+    },
+
+    getAuthHeaders() {
+      const token = localStorage.getItem('access_token');
+      return {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      };
+    },
+
+    // ========== PROMOCIONES ==========
+    async loadPromociones() {
+      try {
+        const response = await apiClient.get('/promociones');
+        this.promociones = response.data;
+      } catch (error) {
+        console.error('Error al cargar promociones:', error);
+      }
+    },
+
+    async loadProductos() {
+      try {
+        const response = await apiClient.get('/tienda/productos');
+        // La API devuelve { data: [...], total, page, limit, totalPages }
+        this.productos = response.data.data || response.data;
+      } catch (error) {
+        console.error('Error al cargar productos:', error);
+      }
+    },
+
+    async submitPromotion() {
+      try {
+        if (this.editingPromotion) {
+          await apiClient.patch(`/promociones/${this.editingPromotion.id}`,
+            this.promotionForm,
+            this.getAuthHeaders()
+          );
+          this.showPromotionMessage('Promoción actualizada exitosamente', 'success');
+          await this.registrarLog('promociones', 'UPDATE', `Actualización de promoción ID ${this.editingPromotion.id}`, { id: this.editingPromotion.id, ...this.promotionForm });
+        } else {
+          await apiClient.post('/promociones',
+            this.promotionForm,
+            this.getAuthHeaders()
+          );
+          this.showPromotionMessage('Promoción creada exitosamente', 'success');
+          await this.registrarLog('promociones', 'CREATE', `Nueva promoción para producto ID ${this.promotionForm.producto_id}`, this.promotionForm);
+        }
+        this.resetPromotionForm();
+        this.loadPromociones();
+      } catch (error) {
+        console.error('Error al guardar promoción:', error);
+        this.showPromotionMessage(
+          error.response?.data?.message || 'Error al guardar la promoción',
+          'error'
+        );
+        await this.registrarLog('promociones', this.editingPromotion ? 'UPDATE' : 'CREATE', 'Error al guardar promoción', null, false, error.response?.data?.message || error.message);
+      }
+    },
+
+    editPromotion(promo) {
+      this.editingPromotion = promo;
+      this.promotionForm = {
+        producto_id: promo.producto_id,
+        porcentaje_descuento: promo.porcentaje_descuento,
+        fecha_inicio: this.formatDateForInput(promo.fecha_inicio),
+        fecha_fin: this.formatDateForInput(promo.fecha_fin),
+        activa: promo.activa,
+      };
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+
+    async deletePromotion(id) {
+      if (!confirm('¿Está seguro de eliminar esta promoción?')) return;
+
+      try {
+        await apiClient.delete(`/promociones/${id}`,
+          this.getAuthHeaders()
+        );
+        this.showPromotionMessage('Promoción eliminada exitosamente', 'success');
+        await this.registrarLog('promociones', 'DELETE', `Promoción ID ${id} eliminada`, { id });
+        this.loadPromociones();
+      } catch (error) {
+        console.error('Error al eliminar promoción:', error);
+        this.showPromotionMessage('Error al eliminar la promoción', 'error');
+        await this.registrarLog('promociones', 'DELETE', `Error al eliminar promoción ID ${id}`, null, false, error.response?.data?.message || error.message);
+      }
+    },
+
+    cancelEditPromotion() {
+      this.resetPromotionForm();
+    },
+
+    resetPromotionForm() {
+      this.editingPromotion = null;
+      this.promotionForm = {
+        producto_id: '',
+        porcentaje_descuento: 0,
+        fecha_inicio: '',
+        fecha_fin: '',
+        activa: true,
+      };
+      this.busquedaProductoPromocion = '';
+      this.mostrarListaProductosPromo = false;
+    },
+
+    showPromotionMessage(message, type) {
+      this.promotionMessage = message;
+      this.promotionMessageType = type;
+      setTimeout(() => {
+        this.promotionMessage = '';
+      }, 3000);
+    },
+
+    // ========== BANNERS ==========
+    async loadBanners() {
+      try {
+        const response = await apiClient.get('/tienda/banners');
+        this.banners = response.data.data || response.data;
+      } catch (error) {
+        console.error('Error al cargar banners:', error);
+      }
+    },
+
+    async submitBanner() {
+      try {
+        if (this.editingBanner) {
+          await apiClient.patch(`/tienda/banners/${this.editingBanner.id}`,
+            this.bannerForm,
+            this.getAuthHeaders()
+          );
+          this.showBannerMessage('Banner actualizado exitosamente', 'success');
+          await this.registrarLog('banners', 'UPDATE', `Actualización de banner "${this.bannerForm.titulo}" (ID ${this.editingBanner.id})`, { id: this.editingBanner.id, ...this.bannerForm });
+        } else {
+          await apiClient.post('/tienda/banners',
+            this.bannerForm,
+            this.getAuthHeaders()
+          );
+          this.showBannerMessage('Banner creado exitosamente', 'success');
+          await this.registrarLog('banners', 'CREATE', `Nuevo banner "${this.bannerForm.titulo}"`, this.bannerForm);
+        }
+        this.resetBannerForm();
+        this.loadBanners();
+      } catch (error) {
+        console.error('Error al guardar banner:', error);
+        this.showBannerMessage('Error al guardar el banner', 'error');
+        await this.registrarLog('banners', this.editingBanner ? 'UPDATE' : 'CREATE', 'Error al guardar banner', null, false, error.response?.data?.message || error.message);
+      }
+    },
+
+    editBanner(banner) {
+      this.editingBanner = banner;
+      this.bannerForm = {
+        titulo: banner.titulo,
+        imagen_url: banner.imagen_url,
+        producto_id: banner.producto_id,
+      };
+      if (banner.producto) {
+        this.busquedaProductoBanner = `[${banner.producto.codigo}] ${banner.producto.producto}`;
+      } else {
+        this.busquedaProductoBanner = '';
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+
+    async deleteBanner(id) {
+      if (!confirm('¿Está seguro de eliminar este banner?')) return;
+
+      try {
+        await apiClient.delete(`/tienda/banners/${id}`,
+          this.getAuthHeaders()
+        );
+        this.showBannerMessage('Banner eliminado exitosamente', 'success');
+        await this.registrarLog('banners', 'DELETE', `Banner ID ${id} eliminado`, { id });
+        this.loadBanners();
+      } catch (error) {
+        console.error('Error al eliminar banner:', error);
+        this.showBannerMessage('Error al eliminar el banner', 'error');
+        await this.registrarLog('banners', 'DELETE', `Error al eliminar banner ID ${id}`, null, false, error.response?.data?.message || error.message);
+      }
+    },
+
+    cancelEditBanner() {
+      this.resetBannerForm();
+    },
+
+    resetBannerForm() {
+      this.editingBanner = null;
+      this.bannerForm = {
+        titulo: '',
+        imagen_url: '',
+        producto_id: null,
+      };
+      this.busquedaProductoBanner = '';
+      this.mostrarListaProductos = false;
+    },
+
+    showBannerMessage(message, type) {
+      this.bannerMessage = message;
+      this.bannerMessageType = type;
+      setTimeout(() => {
+        this.bannerMessage = '';
+      }, 3000);
+    },
+
+    // ========== LOGO ==========
+    resolveLogoUrl(url) {
+      if (!url || typeof url !== 'string') return '';
+      // Si ya es una URL absoluta, usarla directamente
+      if (/^https?:\/\//.test(url)) return url;
+      // Si es una ruta relativa (/uploads/...), construir la URL completa del backend.
+      // En modo proxy (API_BASE_URL = '/api'), serverRoot sería ''. En ese caso se
+      // intenta usar VUE_APP_API_URL para obtener la URL real del backend.
+      let serverRoot = API_BASE_URL.replace(/\/api$/, '');
+      if (!serverRoot) {
+        serverRoot = (process.env.VUE_APP_API_URL || '').replace(/\/api$/, '');
+      }
+      return serverRoot + url;
+    },
+
+    async loadLogo() {
+      try {
+        // Usar el endpoint dedicado en lugar del genérico :clave
+        const response = await apiClient.get('/configuracion/logo/url');
+        const raw = typeof response.data?.valor === 'string' ? response.data.valor : '';
+        this.currentLogo = this.resolveLogoUrl(raw);
+      } catch (error) {
+        console.log('No hay logo configurado');
+      }
+    },
+
+    async submitLogo() {
+      try {
+        if (this.logoInputMode === 'archivo') {
+          if (!this.logoFile) {
+            this.showLogoMessage('Selecciona un archivo de imagen', 'error');
+            return;
+          }
+          const formData = new FormData();
+          formData.append('file', this.logoFile);
+          await apiClient.post('/configuracion/logo/upload', formData);
+          await this.registrarLog('logo', 'UPLOAD', `Logo actualizado por subida de archivo`);
+        } else {
+          if (!this.logoForm.logo_url) {
+            this.showLogoMessage('Ingresa una URL válida', 'error');
+            return;
+          }
+          await apiClient.post('/configuracion',
+            { clave: 'logo_url', valor: this.logoForm.logo_url },
+            this.getAuthHeaders()
+          );
+          await this.registrarLog('logo', 'UPDATE', `Logo actualizado por URL`, { logo_url: this.logoForm.logo_url });
+        }
+        this.showLogoMessage('Logo actualizado exitosamente', 'success');
+        this.logoLoadError = false;
+        await this.loadLogo();
+        this.logoForm.logo_url = '';
+        this.logoFile = null;
+        this.logoFilePreview = '';
+      } catch (error) {
+        console.error('Error al actualizar logo:', error);
+        this.showLogoMessage('Error al actualizar el logo', 'error');
+        await this.registrarLog('logo', 'UPDATE', 'Error al actualizar logo', null, false, error.response?.data?.message || error.message);
+      }
+    },
+
+    handleLogoFileChange(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      this.logoFile = file;
+      const reader = new FileReader();
+      reader.onload = (e) => { this.logoFilePreview = e.target.result; };
+      reader.readAsDataURL(file);
+    },
+
+    showLogoMessage(message, type) {
+      this.logoMessage = message;
+      this.logoMessageType = type;
+      setTimeout(() => {
+        this.logoMessage = '';
+      }, 3000);
+    },
+
+    // ========== USUARIOS ==========
+    async loadUsuarios() {
+      try {
+        // apiClient ya incluye el token automáticamente via interceptor
+        const response = await apiClient.get('/usuarios');
+        this.usuarios = response.data;
+      } catch (error) {
+        console.error('Error al cargar usuarios:', error);
+        // Si es 401, el interceptor redirigirá al login
+      }
+    },
+
+    async loadCurrentUserId() {
+      try {
+        // apiClient ya incluye el token automáticamente via interceptor
+        const response = await apiClient.get('/usuarios/perfil');
+        this.currentUserId = response.data.id;
+      } catch (error) {
+        console.error('Error al obtener ID del usuario actual:', error);
+        // Si es 401, el interceptor redirigirá al login
+      }
+    },
+
+    validateUserForm() {
+      const errors = [];
+      
+      // Validar nombre
+      if (!this.userForm.nombre || this.userForm.nombre.trim() === '') {
+        errors.push('El nombre es obligatorio');
+      } else if (this.userForm.nombre.trim().length < 2) {
+        errors.push('El nombre debe tener al menos 2 caracteres');
+      } else if (this.userForm.nombre.trim().length > 50) {
+        errors.push('El nombre no puede exceder 50 caracteres');
+      }
+      
+      // Validar apellido
+      if (!this.userForm.apellido || this.userForm.apellido.trim() === '') {
+        errors.push('El apellido es obligatorio');
+      } else if (this.userForm.apellido.trim().length < 2) {
+        errors.push('El apellido debe tener al menos 2 caracteres');
+      } else if (this.userForm.apellido.trim().length > 50) {
+        errors.push('El apellido no puede exceder 50 caracteres');
+      }
+      
+      // Validar username
+      if (!this.userForm.username || this.userForm.username.trim() === '') {
+        errors.push('El username es obligatorio');
+      } else if (this.userForm.username.trim().length < 3) {
+        errors.push('El username debe tener al menos 3 caracteres');
+      } else if (this.userForm.username.trim().length > 30) {
+        errors.push('El username no puede exceder 30 caracteres');
+      } else if (!/^[a-zA-Z0-9_]+$/.test(this.userForm.username)) {
+        errors.push('El username solo puede contener letras, números y guiones bajos');
+      }
+      
+      // Validar email
+      if (!this.userForm.email || this.userForm.email.trim() === '') {
+        errors.push('El email es obligatorio');
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(this.userForm.email)) {
+          errors.push('El email no tiene un formato válido');
+        }
+      }
+      
+      // Validar contraseña solo al crear usuario nuevo
+      if (!this.editingUser) {
+        if (!this.userForm.password || this.userForm.password.trim() === '') {
+          errors.push('La contraseña es obligatoria para usuarios nuevos');
+        } else if (this.userForm.password.length < 6) {
+          errors.push('La contraseña debe tener al menos 6 caracteres');
+        }
+      }
+      
+      // Validar teléfono (opcional, pero si se llena debe ser válido)
+      if (this.userForm.telefono && this.userForm.telefono.trim() !== '') {
+        const telefonoTrim = this.userForm.telefono.trim();
+        
+        // Validar longitud
+        if (telefonoTrim.length < 7 || telefonoTrim.length > 20) {
+          errors.push('El teléfono debe tener entre 7 y 20 caracteres');
+        }
+        // Validar formato: solo números, espacios, +, -, ( )
+        else if (!/^[0-9+\-\s()]+$/.test(telefonoTrim)) {
+          errors.push('El teléfono solo puede contener números, espacios y los caracteres: + - ( )');
+        }
+      }
+      
+      // Validar rol
+      if (!this.userForm.rol || this.userForm.rol === '') {
+        errors.push('Debe seleccionar un rol');
+      } else if (!['administrador', 'vendedor', 'tecnico', 'cliente'].includes(this.userForm.rol)) {
+        errors.push('El rol seleccionado no es válido');
+      }
+      
+      // Validar dirección (opcional, pero si se llena tiene límite)
+      if (this.userForm.direccion && this.userForm.direccion.length > 200) {
+        errors.push('La dirección no puede exceder 200 caracteres');
+      }
+      
+      return errors;
+    },
+
+    async submitUser() {
+      try {
+        // Validar formulario antes de enviar
+        const validationErrors = this.validateUserForm();
+        if (validationErrors.length > 0) {
+          this.showUserMessage(validationErrors.join('. '), 'error');
+          return;
+        }
+
+        // Debug: verificar token y headers
+        const token = localStorage.getItem('access_token');
+        const headers = this.getAuthHeaders();
+        console.log('Token:', token ? 'Existe' : 'No existe');
+        console.log('Headers:', headers);
+        console.log('UserForm:', this.userForm);
+
+        if (this.editingUser) {
+          // Actualizar usuario (sin password)
+          // eslint-disable-next-line no-unused-vars
+          const { password, ...updateData } = this.userForm;
+          
+          // Limpiar campos vacíos para evitar problemas de validación
+          // Convertir strings vacíos a null
+          Object.keys(updateData).forEach(key => {
+            if (updateData[key] === '') {
+              updateData[key] = null;
+            }
+          });
+          
+          console.log('Datos a actualizar:', updateData);
+          
+          await apiClient.patch(`/usuarios/${this.editingUser.id}`,
+            updateData,
+            this.getAuthHeaders()
+          );
+          this.showUserMessage('Usuario actualizado exitosamente', 'success');
+          await this.registrarLog('usuarios', 'UPDATE', `Usuario "${this.editingUser.username}" actualizado (ID ${this.editingUser.id})`, { id: this.editingUser.id, campos_actualizados: Object.keys(updateData) });
+        } else {
+          // Crear usuario nuevo
+          console.log('Enviando POST a:', `${API_BASE_URL}/usuarios`);
+          await apiClient.post('/usuarios',
+            this.userForm,
+            this.getAuthHeaders()
+          );
+          this.showUserMessage('Usuario creado exitosamente', 'success');
+          await this.registrarLog('usuarios', 'CREATE', `Nuevo usuario "${this.userForm.username}" creado con rol ${this.userForm.rol}`, { username: this.userForm.username, rol: this.userForm.rol });
+        }
+        this.resetUserForm();
+        this.loadUsuarios();
+      } catch (error) {
+        console.error('Error completo al guardar usuario:', error);
+        console.error('Response data:', error.response?.data);
+        console.error('Response status:', error.response?.status);
+        console.error('Response headers:', error.response?.headers);
+        
+        // Mostrar mensaje de error más detallado
+        let errorMsg = 'Error al guardar el usuario';
+        if (error.response?.data?.message) {
+          if (Array.isArray(error.response.data.message)) {
+            errorMsg = error.response.data.message.join(', ');
+          } else {
+            errorMsg = error.response.data.message;
+          }
+        }
+        
+        this.showUserMessage(errorMsg, 'error');
+      }
+    },
+
+    editUser(user) {
+      this.editingUser = user;
+      this.userForm = {
+        nombre: user.nombre,
+        apellido: user.apellido,
+        username: user.username,
+        email: user.email,
+        password: '', // No cargar password
+        telefono: user.telefono || '',
+        direccion: user.direccion || '',
+        rol: user.rol,
+      };
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+
+    async deleteUser(id) {
+      if (!confirm('¿Está seguro de eliminar este usuario? Esta acción no se puede deshacer.')) return;
+
+      try {
+        await apiClient.delete(`/usuarios/${id}`,
+          this.getAuthHeaders()
+        );
+        this.showUserMessage('Usuario eliminado exitosamente', 'success');
+        await this.registrarLog('usuarios', 'DELETE', `Usuario ID ${id} eliminado`, { id });
+        this.loadUsuarios();
+      } catch (error) {
+        console.error('Error al eliminar usuario:', error);
+        this.showUserMessage(
+          error.response?.data?.message || 'Error al eliminar el usuario',
+          'error'
+        );
+        await this.registrarLog('usuarios', 'DELETE', `Error al eliminar usuario ID ${id}`, null, false, error.response?.data?.message || error.message);
+      }
+    },
+
+    openResetPasswordModal(user) {
+      this.resetPasswordUser = user;
+      this.showResetPasswordModal = true;
+      this.resetPasswordForm = {
+        nuevaPassword: '',
+        confirmarPassword: '',
+      };
+      this.resetPasswordMessage = '';
+    },
+
+    closeResetPasswordModal() {
+      this.showResetPasswordModal = false;
+      this.resetPasswordUser = null;
+      this.resetPasswordForm = {
+        nuevaPassword: '',
+        confirmarPassword: '',
+      };
+      this.resetPasswordMessage = '';
+      this.resettingPassword = false;
+    },
+
+    validateResetPasswordForm() {
+      const errors = [];
+
+      if (!this.resetPasswordForm.nuevaPassword) {
+        errors.push('La nueva contraseña es obligatoria');
+      } else if (this.resetPasswordForm.nuevaPassword.length < 6) {
+        errors.push('La contraseña debe tener al menos 6 caracteres');
+      } else {
+        // Validar que tenga letra, número y carácter especial
+        const hasLetter = /[A-Za-z]/.test(this.resetPasswordForm.nuevaPassword);
+        const hasNumber = /\d/.test(this.resetPasswordForm.nuevaPassword);
+        const hasSpecial = /[@$!%*?&.,\-_:]/.test(this.resetPasswordForm.nuevaPassword);
+
+        if (!hasLetter || !hasNumber || !hasSpecial) {
+          errors.push('La contraseña debe incluir al menos una letra, un número y un carácter especial (@$!%*?&.,-_:)');
+        }
+      }
+
+      if (!this.resetPasswordForm.confirmarPassword) {
+        errors.push('Debes confirmar la contraseña');
+      } else if (this.resetPasswordForm.nuevaPassword !== this.resetPasswordForm.confirmarPassword) {
+        errors.push('Las contraseñas no coinciden');
+      }
+
+      return errors;
+    },
+
+    async submitResetPassword() {
+      try {
+        // Validar formulario
+        const validationErrors = this.validateResetPasswordForm();
+        if (validationErrors.length > 0) {
+          this.resetPasswordMessage = validationErrors.join('. ');
+          this.resetPasswordMessageType = 'error';
+          return;
+        }
+
+        this.resettingPassword = true;
+
+        // Enviar petición al backend
+        await apiClient.patch(
+          `/usuarios/${this.resetPasswordUser.id}/reset-password`,
+          { nuevaPassword: this.resetPasswordForm.nuevaPassword },
+          this.getAuthHeaders()
+        );
+
+        this.showUserMessage(
+          `✅ Contraseña de ${this.resetPasswordUser.nombre} ${this.resetPasswordUser.apellido} restablecida exitosamente`,
+          'success'
+        );
+        await this.registrarLog('usuarios', 'UPDATE', `Contraseña restablecida para usuario "${this.resetPasswordUser.username}" (ID ${this.resetPasswordUser.id})`, { usuario_id: this.resetPasswordUser.id });
+        this.closeResetPasswordModal();
+      } catch (error) {
+        console.error('Error al resetear contraseña:', error);
+        
+        let errorMsg = 'Error al resetear la contraseña';
+        if (error.response?.data?.message) {
+          if (Array.isArray(error.response.data.message)) {
+            errorMsg = error.response.data.message.join(', ');
+          } else {
+            errorMsg = error.response.data.message;
+          }
+        }
+        
+        this.resetPasswordMessage = errorMsg;
+        this.resetPasswordMessageType = 'error';
+      } finally {
+        this.resettingPassword = false;
+      }
+    },
+
+    cancelEditUser() {
+      this.resetUserForm();
+    },
+
+    resetUserForm() {
+      this.editingUser = null;
+      this.userForm = {
+        nombre: '',
+        apellido: '',
+        username: '',
+        email: '',
+        password: '',
+        telefono: '',
+        direccion: '',
+        rol: '',
+      };
+    },
+
+    showUserMessage(message, type) {
+      this.userMessage = message;
+      this.userMessageType = type;
+      setTimeout(() => {
+        this.userMessage = '';
+      }, 5000);
+    },
+
+    isCurrentUser(userId) {
+      return this.currentUserId === userId;
+    },
+
+    getRoleClass(rol) {
+      const roleClasses = {
+        'administrador': 'role-admin',
+        'vendedor': 'role-vendedor',
+        'tecnico': 'role-tecnico',
+        'cliente': 'role-cliente'
+      };
+      return roleClasses[rol] || 'role-default';
+    },
+
+    getRoleLabel(rol) {
+      const roleLabels = {
+        'administrador': 'Administrador',
+        'vendedor': 'Vendedor',
+        'tecnico': 'Técnico',
+        'cliente': 'Cliente'
+      };
+      return roleLabels[rol] || rol;
+    },
+
+    // ========== UTILIDADES ==========
+    calcularPrecioConDescuento(precio, descuento) {
+      if (!precio || !descuento) return precio;
+      return (precio - (precio * descuento) / 100).toFixed(2);
+    },
+
+    formatDate(dateString) {
+      const date = new Date(dateString);
+      return date.toLocaleString('es-ES', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    },
+
+    formatDateForInput(dateString) {
+      const date = new Date(dateString);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    },
+
+    // ========== PERMISOS TEMPORALES ==========
+    async loadPermisos() {
+      try {
+        const response = await apiClient.get('/permisos-temporales',
+          this.getAuthHeaders()
+        );
+        this.permisos = response.data;
+      } catch (error) {
+        console.error('Error al cargar permisos:', error);
+      }
+    },
+
+    async loadVendedores() {
+      try {
+        const response = await apiClient.get('/usuarios',
+          this.getAuthHeaders()
+        );
+        this.vendedores = response.data.filter(u => u.rol === 'vendedor');
+      } catch (error) {
+        console.error('Error al cargar vendedores:', error);
+      }
+    },
+
+    async submitPermiso() {
+      try {
+        if (this.editingPermiso) {
+          await apiClient.patch(`/permisos-temporales/${this.editingPermiso.id}`,
+            {
+              fecha_expiracion: this.permisoForm.fecha_expiracion,
+              activo: this.permisoForm.activo,
+              razon: this.permisoForm.razon,
+            },
+            this.getAuthHeaders()
+          );
+          this.showPermisoMessage('Permiso actualizado exitosamente', 'success');
+          await this.registrarLog('permisos', 'UPDATE', `Permiso ID ${this.editingPermiso.id} actualizado para usuario ID ${this.editingPermiso.user_id}`, { id: this.editingPermiso.id });
+        } else {
+          // Convertir user_id a número y asegurar formato correcto
+          const permisoData = {
+            user_id: parseInt(this.permisoForm.user_id),
+            tipo_permiso: this.permisoForm.tipo_permiso,
+            fecha_expiracion: new Date(this.permisoForm.fecha_expiracion).toISOString(),
+            razon: this.permisoForm.razon || undefined,
+          };
+          
+          await apiClient.post('/permisos-temporales',
+            permisoData,
+            this.getAuthHeaders()
+          );
+          this.showPermisoMessage('Permiso otorgado exitosamente', 'success');
+          await this.registrarLog('permisos', 'CREATE', `Permiso "${permisoData.tipo_permiso}" otorgado a usuario ID ${permisoData.user_id}`, permisoData);
+        }
+        this.resetPermisoForm();
+        this.loadPermisos();
+      } catch (error) {
+        console.error('Error al guardar permiso:', error);
+        this.showPermisoMessage(
+          error.response?.data?.message || 'Error al guardar el permiso',
+          'error'
+        );
+        await this.registrarLog('permisos', this.editingPermiso ? 'UPDATE' : 'CREATE', 'Error al guardar permiso', null, false, error.response?.data?.message || error.message);
+      }
+    },
+
+    editPermiso(permiso) {
+      this.editingPermiso = permiso;
+      this.permisoForm = {
+        user_id: permiso.user_id,
+        tipo_permiso: permiso.tipo_permiso,
+        fecha_expiracion: this.formatDateForInput(permiso.fecha_expiracion),
+        activo: permiso.activo,
+        razon: permiso.razon || '',
+      };
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+
+    async revocarPermiso(id) {
+      if (!confirm('¿Está seguro de revocar este permiso?')) return;
+
+      try {
+        await apiClient.patch(`/permisos-temporales/${id}/revocar`,
+          {},
+          this.getAuthHeaders()
+        );
+        this.showPermisoMessage('Permiso revocado exitosamente', 'success');
+        await this.registrarLog('permisos', 'UPDATE', `Permiso ID ${id} revocado`, { id });
+        this.loadPermisos();
+      } catch (error) {
+        console.error('Error al revocar permiso:', error);
+        this.showPermisoMessage(
+          error.response?.data?.message || 'Error al revocar el permiso',
+          'error'
+        );
+        await this.registrarLog('permisos', 'UPDATE', `Error al revocar permiso ID ${id}`, null, false, error.response?.data?.message || error.message);
+      }
+    },
+
+    async deletePermiso(id) {
+      if (!confirm('¿Está seguro de eliminar este permiso? Esta acción no se puede deshacer.')) return;
+
+      try {
+        await apiClient.delete(`/permisos-temporales/${id}`,
+          this.getAuthHeaders()
+        );
+        this.showPermisoMessage('Permiso eliminado exitosamente', 'success');
+        await this.registrarLog('permisos', 'DELETE', `Permiso ID ${id} eliminado`, { id });
+        this.loadPermisos();
+      } catch (error) {
+        console.error('Error al eliminar permiso:', error);
+        this.showPermisoMessage(
+          error.response?.data?.message || 'Error al eliminar el permiso',
+          'error'
+        );
+        await this.registrarLog('permisos', 'DELETE', `Error al eliminar permiso ID ${id}`, null, false, error.response?.data?.message || error.message);
+      }
+    },
+
+    cancelEditPermiso() {
+      this.resetPermisoForm();
+    },
+
+    resetPermisoForm() {
+      this.editingPermiso = null;
+      this.permisoForm = {
+        user_id: '',
+        tipo_permiso: '',
+        fecha_expiracion: '',
+        activo: true,
+        razon: '',
+      };
+    },
+
+    showPermisoMessage(message, type) {
+      this.permisoMessage = message;
+      this.permisoMessageType = type;
+      setTimeout(() => {
+        this.permisoMessage = '';
+      }, 3000);
+    },
+
+    getCurrentDateTime() {
+      const now = new Date();
+      return this.formatDateForInput(now);
+    },
+
+    isPermisoExpirado(permiso) {
+      return new Date(permiso.fecha_expiracion) < new Date();
+    },
+
+    getPermisoStatus(permiso) {
+      if (!permiso.activo) return 'Revocado';
+      if (this.isPermisoExpirado(permiso)) return 'Expirado';
+      return 'Activo';
+    },
+
+    getPermisoStatusClass(permiso) {
+      if (!permiso.activo) return 'inactive';
+      if (this.isPermisoExpirado(permiso)) return 'expired';
+      return 'active';
+    },
+
+    getPermisoLabel(tipo) {
+      const labels = {
+        'banners': 'Banners',
+        'promociones': 'Promociones',
+        'logo': 'Logo',
+        'all': 'Todos'
+      };
+      return labels[tipo] || tipo;
+    },
+
+    getPermisoBadgeClass(tipo) {
+      const classes = {
+        'banners': 'permiso-banners',
+        'promociones': 'permiso-promociones',
+        'logo': 'permiso-logo',
+        'all': 'permiso-all'
+      };
+      return classes[tipo] || 'permiso-default';
+    },
+
+    truncateText(text, maxLength) {
+      if (!text) return '';
+      return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    },
+
+    // Métodos para cerrar selectores de productos
+    cerrarSelectorPromocion() {
+      this.mostrarListaProductosPromo = false;
+    },
+
+    cerrarSelectorBanner() {
+      this.mostrarListaProductos = false;
+    },
+
+    cerrarSelectorPromocionDespuesDeDelay() {
+      // Delay para permitir que el evento change se ejecute primero
+      setTimeout(() => {
+        this.mostrarListaProductosPromo = false;
+      }, 200);
+    },
+
+    cerrarSelectorBannerDespuesDeDelay() {
+      // Delay para permitir que el evento change se ejecute primero
+      setTimeout(() => {
+        this.mostrarListaProductos = false;
+      }, 200);
+    },
+  },
+
+  computed: {
+    visibleTabs() {
+      // Filtrar tabs según el rol del usuario
+      return this.tabs.filter(tab => {
+        // Solo administradores ven el tab de usuarios, permisos y actividad
+        if ((tab.id === 'usuarios' || tab.id === 'permisos' || tab.id === 'actividad') && !this.isAdmin) {
+          return false;
+        }
+        return true;
+      });
+    },
+
+    permisosFiltrados() {
+      const now = new Date();
+      
+      return this.permisos.filter(permiso => {
+        if (this.permisoFilter === 'activos') {
+          return permiso.activo && new Date(permiso.fecha_expiracion) > now;
+        } else if (this.permisoFilter === 'expirados') {
+          return !permiso.activo || new Date(permiso.fecha_expiracion) <= now;
+        }
+        return true; // 'all'
+      });
+    },
+
+    productosFiltradosBanner() {
+      if (!this.busquedaProductoBanner.trim()) {
+        return this.productos;
+      }
+
+      const busqueda = this.busquedaProductoBanner.toLowerCase().trim();
+      
+      return this.productos.filter(producto => {
+        const codigo = String(producto.codigo).toLowerCase();
+        const nombre = (producto.producto || '').toLowerCase();
+        
+        return codigo.includes(busqueda) || nombre.includes(busqueda);
+      });
+    },
+
+    productosFiltradosPromocion() {
+      if (!this.busquedaProductoPromocion.trim()) {
+        return this.productos;
+      }
+
+      const busqueda = this.busquedaProductoPromocion.toLowerCase().trim();
+      
+      return this.productos.filter(producto => {
+        const codigo = String(producto.codigo).toLowerCase();
+        const nombre = (producto.producto || '').toLowerCase();
+        
+        return codigo.includes(busqueda) || nombre.includes(busqueda);
+      });
+    },
+  },
+};

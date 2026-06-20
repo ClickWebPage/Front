@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="page-layout">
     <HeaderAnth
       :searchQuery="searchQuery"
       :isAuthenticated="isAuthenticated"
@@ -9,11 +9,19 @@
 
     <div class="todos-productos-container">
       <div class="page-header">
-        <h1>Todos los Productos</h1>
+        <h1>{{ searchQuery ? 'Resultados de búsqueda' : 'Todos los Productos' }}</h1>
         <p class="breadcrumb">
           <router-link to="/home">Inicio</router-link> /
-          <span>Productos</span>
+          <span v-if="searchQuery">Búsqueda: "{{ searchQuery }}"</span>
+          <span v-else>Productos</span>
         </p>
+        <!-- Indicador de búsqueda activa -->
+        <div v-if="searchQuery" class="search-indicator">
+          <span class="search-tag">
+            Buscando: <strong>{{ searchQuery }}</strong>
+            <button @click="limpiarBusqueda" class="clear-search-btn" title="Limpiar búsqueda">×</button>
+          </span>
+        </div>
       </div>
 
       <div class="productos-layout">
@@ -27,8 +35,14 @@
           <!-- Filtro por Marca -->
           <div class="filtro-seccion">
             <h3>Marca</h3>
+            <input
+              v-model="busquedaMarca"
+              type="text"
+              class="filtro-busqueda"
+              placeholder="Buscar marca..."
+            />
             <div class="filtro-opciones">
-              <label v-for="marca in marcasDisponibles" :key="marca" class="checkbox-label">
+              <label v-for="marca in marcasFiltradas" :key="marca" class="checkbox-label">
                 <input
                   type="checkbox"
                   :value="marca"
@@ -37,41 +51,53 @@
                 />
                 <span>{{ marca }}</span>
               </label>
+              <span v-if="marcasFiltradas.length === 0" class="no-opciones">Sin resultados</span>
             </div>
           </div>
 
-          <!-- Filtro por Color -->
-          <div class="filtro-seccion">
-            <h3>Color</h3>
-            <div class="filtro-opciones">
-              <label v-for="color in coloresDisponibles" :key="color" class="checkbox-label">
-                <input
-                  type="checkbox"
-                  :value="color"
-                  v-model="filtros.colores"
-                  @change="aplicarFiltros"
-                />
-                <span>{{ color }}</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Filtro por Subcategoría -->
-          <div class="filtro-seccion">
+          <!-- Filtro por Categoría -->
+          <div class="filtro-seccion" v-if="categoriasDisponibles.length > 0">
             <h3>Categoría</h3>
+            <input
+              v-model="busquedaCategoria"
+              type="text"
+              class="filtro-busqueda"
+              placeholder="Buscar categoría..."
+            />
             <div class="filtro-opciones">
-              <label v-for="subcategoria in subcategoriasDisponibles" :key="subcategoria" class="checkbox-label categoria-checkbox">
+              <label v-for="categoria in categoriasFiltradas" :key="categoria" class="checkbox-label">
                 <input
                   type="checkbox"
-                  :value="subcategoria"
-                  v-model="filtros.subcategorias"
+                  :value="categoria"
+                  v-model="filtros.categorias"
                   @change="aplicarFiltros"
                 />
-                <span class="categoria-label-content">
-                  <span v-html="obtenerIconoCategoria(subcategoria)" class="categoria-icon-wrapper"></span>
-                  <span class="categoria-nombre">{{ subcategoria }}</span>
-                </span>
+                <span>{{ categoria }}</span>
               </label>
+              <span v-if="categoriasFiltradas.length === 0" class="no-opciones">Sin resultados</span>
+            </div>
+          </div>
+
+          <!-- Filtro por Medida -->
+          <div class="filtro-seccion">
+            <h3>Medida</h3>
+            <input
+              v-model="busquedaMedida"
+              type="text"
+              class="filtro-busqueda"
+              placeholder="Buscar medida..."
+            />
+            <div class="filtro-opciones">
+              <label v-for="medida in medidasFiltradas" :key="medida" class="checkbox-label">
+                <input
+                  type="checkbox"
+                  :value="medida"
+                  v-model="filtros.medidas"
+                  @change="aplicarFiltros"
+                />
+                <span>{{ medida }}</span>
+              </label>
+              <span v-if="medidasFiltradas.length === 0" class="no-opciones">Sin resultados</span>
             </div>
           </div>
 
@@ -161,46 +187,47 @@
           <div v-else :class="['productos-grid', vistaActual === 'lista' ? 'vista-lista' : 'vista-cuadricula']">
             <div
               v-for="producto in productosPaginados"
-              :key="producto.id"
+              :key="producto.codigo"
               class="producto-card"
+              @click="verDetalle(producto.codigo)"
             >
               <div class="producto-imagen">
                 <img 
-                  :src="producto.imagen_url || '/placeholder.jpg'" 
-                  :alt="producto.nombre_producto"
+                  :src="producto.imagen_url || '/placeholder_product.jpg'" 
+                  :alt="producto.producto"
                   @error="handleImageError"
+                  loading="lazy"
                 />
-                <span v-if="producto.stock === 0" class="badge sin-stock">Sin Stock</span>
-                <span v-else-if="producto.stock < 10" class="badge poco-stock">Pocas unidades</span>
+                <span v-if="parseInt(producto.existenciaTotal) === 0" class="badge sin-stock">Sin Stock</span>
+                <span v-else-if="parseInt(producto.existenciaTotal) < 3" class="badge poco-stock">Pocas unidades</span>
               </div>
               <div class="producto-info">
                 <span v-if="producto.marca" class="marca-tag">{{ producto.marca }}</span>
-                <h3>{{ producto.nombre_producto }}</h3>
-                <p class="descripcion">{{ truncarDescripcion(producto.descripcion) }}</p>
+                <span class="codigo-tag">Cód: {{ producto.codigo }}</span>
+                <h3>{{ producto.producto }}</h3>
+                <p class="descripcion" v-if="producto.medida">Medida: {{ producto.medida }}</p>
                 <div class="producto-footer">
-                  <div class="precio-info">
-                    <p class="precio">${{ formatearPrecio(producto.precio) }}</p>
+                  <div v-if="isAuthenticated" class="precio-info">
+                    <p class="precio">${{ formatearPrecio(producto.costoTotal) }}</p>
                     <p style="font-size: 0.75em; color: #999; margin: 0;">incluido IVA</p>
                   </div>
-                  <p class="stock" :class="{ 'sin-stock': producto.stock === 0, 'pocas-unidades': producto.stock > 0 && producto.stock <= 5 }">
-                    {{ obtenerTextoStock(producto.stock) }}
+                  <p v-else class="precio">Inicia sesión para ver precio</p>
+                  <p class="stock" :class="{ 'sin-stock': parseInt(producto.existenciaTotal) === 0, 'pocas-unidades': parseInt(producto.existenciaTotal) > 0 && parseInt(producto.existenciaTotal) < 3 }">
+                    {{ obtenerTextoStock(parseInt(producto.existenciaTotal)) }}
                   </p>
                 </div>
                 <div class="producto-acciones">
-                  <button @click="verDetalle(producto.id)" class="ver-btn">
-                    Ver Detalles
-                  </button>
                   <button 
-                    v-if="producto.stock > 0"
-                    @click="agregarAlCarrito(producto)" 
+                    v-if="parseInt(producto.existenciaTotal) > 0"
+                    @click.stop="agregarAlCarrito(producto)" 
                     class="agregar-btn"
                     title="Agregar al carrito"
                   >
-                    🛒
+                    🛒 Agregar
                   </button>
                 </div>
               </div>
-            n</div>
+            </div>
           </div>
 
           <!-- Paginación -->
@@ -212,7 +239,20 @@
             >
               ← Anterior
             </button>
-            <span class="pagina-info">Página {{ paginaActual }} de {{ totalPaginas }}</span>
+
+            <div class="paginas-numeros">
+              <template v-for="(pagina, index) in paginasVisibles" :key="index">
+                <button
+                  v-if="pagina !== '...'"
+                  @click="cambiarPagina(pagina)"
+                  :class="['pagina-numero-btn', { activa: pagina === paginaActual }]"
+                >
+                  {{ pagina }}
+                </button>
+                <span v-else class="pagina-ellipsis">...</span>
+              </template>
+            </div>
+
             <button 
               @click="cambiarPagina(paginaActual + 1)" 
               :disabled="paginaActual === totalPaginas"
@@ -220,6 +260,25 @@
             >
               Siguiente →
             </button>
+
+            <div class="pagina-info-container">
+              <span class="pagina-info">Página {{ paginaActual }} de {{ totalPaginas }}</span>
+              <div class="ir-a-pagina">
+                <label>Ir a:</label>
+                <input
+                  type="number"
+                  v-model.number="paginaInput"
+                  @keyup.enter="irAPaginaInput"
+                  :min="1"
+                  :max="totalPaginas"
+                  placeholder="#"
+                  class="pagina-input"
+                />
+                <button @click="irAPaginaInput" class="btn-ir" title="Ir a página">
+                  →
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
